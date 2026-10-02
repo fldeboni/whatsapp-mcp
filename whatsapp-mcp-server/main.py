@@ -16,7 +16,8 @@ from whatsapp import (
     send_message as whatsapp_send_message,
     send_file as whatsapp_send_file,
     send_audio_message as whatsapp_audio_voice_message,
-    download_media as whatsapp_download_media
+    download_media as whatsapp_download_media,
+    mark_chat_as_read as whatsapp_mark_chat_as_read
 )
 
 # Initialize FastMCP server
@@ -224,6 +225,20 @@ def send_audio_message(recipient: str, media_path: str) -> Dict[str, Any]:
         "success": success,
         "message": status_message
     }
+
+@mcp.tool()
+def mark_chats_as_read(chat_jids: List[str]) -> List[Dict[str, Any]]:
+    """Mark one or more WhatsApp chats as read (clears the unread badge on the phone and other devices).
+    Use list_chats to find the JIDs; group JIDs end with @g.us.
+
+    Args:
+        chat_jids: List of chat JIDs to mark as read
+    """
+    results = []
+    for jid in chat_jids:
+        success, status_message = whatsapp_mark_chat_as_read(jid)
+        results.append({"chat_jid": jid, "success": success, "message": status_message})
+    return results
 
 @mcp.tool()
 def download_media(message_id: str, chat_jid: str) -> Dict[str, Any]:

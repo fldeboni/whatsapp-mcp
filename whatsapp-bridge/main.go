@@ -23,6 +23,7 @@ import (
 	"bytes"
 
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
@@ -691,6 +692,26 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	return true, mediaType, filename, absPath, nil
 }
 
+// markChatAsRead sends the app state patch that clears the chat's unread badge on all devices.
+// Only the last message timestamp is sent: the stored sender is a bare user part, not enough to rebuild the message key.
+func markChatAsRead(client *whatsmeow.Client, messageStore *MessageStore, chatJID string) (bool, string) {
+	jid, err := types.ParseJID(chatJID)
+	if err != nil {
+		return false, fmt.Sprintf("invalid chat JID: %v", err)
+	}
+
+	var lastTS time.Time
+	err = messageStore.db.QueryRow("SELECT last_message_time FROM chats WHERE jid = ?", chatJID).Scan(&lastTS)
+	if err != nil {
+		lastTS = time.Now()
+	}
+
+	if err := client.SendAppState(context.Background(), appstate.BuildMarkChatAsRead(jid, true, lastTS, nil)); err != nil {
+		return false, fmt.Sprintf("failed to mark %s as read: %v", chatJID, err)
+	}
+	return true, fmt.Sprintf("Marked %s as read", chatJID)
+}
+
 // Extract direct path from a WhatsApp media URL
 func extractDirectPathFromURL(url string) string {
 	// The direct path is typically in the URL, we need to extract it
@@ -808,6 +829,29 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			Filename: filename,
 			Path:     path,
 		})
+	})
+
+	// Handler for marking a chat as read (same as "Mark as read" in the chat list; syncs to the phone)
+	http.HandleFunc("/api/markread", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			ChatJID string `json:"chat_jid"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ChatJID == "" {
+			http.Error(w, "chat_jid is required", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		success, message := markChatAsRead(client, messageStore, req.ChatJID)
+		if !success {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		json.NewEncoder(w).Encode(SendMessageResponse{Success: success, Message: message})
 	})
 
 	// Start the server

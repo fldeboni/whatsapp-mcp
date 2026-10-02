@@ -22,6 +22,8 @@ Conecta o WhatsApp **pessoal** ao Claude via whatsmeow (protocolo não oficial �
 3. **Nome de arquivo de mídia sanitizado** (`safeFilename`) — o nome do documento vem do remetente; sem isso, `..\..\Startup\x.bat` gravava fora da pasta.
 4. whatsmeow atualizado (o pin de 03/2025 é recusado pelo servidor); chamadas ajustadas pra API com `context`.
 5. `mcp<2` (o 2.x renomeou FastMCP) e lock atualizado pra rodar no Python 3.14.
+6. `list_chats(include_last_message=False)` quebrava (colunas sem JOIN); `print()` redirecionado pra stderr (stdout é o canal MCP).
+7. **Nova ferramenta `mark_chats_as_read`** (endpoint `/api/markread`): manda o app state "marcar como lido", que limpa o badge no celular. Só usa o timestamp da última mensagem (o sender gravado é LID sem servidor, não dá pra montar a chave).
 
 ## Permissões no Claude Code (`~/.claude/settings.json`)
 
@@ -30,7 +32,7 @@ Conecta o WhatsApp **pessoal** ao Claude via whatsmeow (protocolo não oficial �
 
 ## Operação
 
-- Início automático: tarefa agendada **"WhatsApp MCP Bridge"** (logon, oculta, reinicia sozinho se cair).
+- Início automático: tarefa agendada **"WhatsApp MCP Bridge"** (logon, oculta, reinicia sozinho se cair). **Em 02/10/2026 a tarefa saía com código 1 sem executar nada (nem `cmd /c whoami`) — suspeita de política corporativa.** Enquanto não resolver, subir manualmente: `Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File "<esta pasta>\start-bridge.ps1" -Log'`.
 - Rodar manualmente / re-parear: `powershell -ExecutionPolicy Bypass -File .\start-bridge.ps1` (mostra QR).
 - Re-parear do zero: parar o bridge, apagar `%LOCALAPPDATA%\whatsapp-mcp\store\whatsapp.db`, rodar de novo.
 - A sessão vincula como "aparelho conectado" no celular; dá pra derrubar por lá a qualquer momento.
