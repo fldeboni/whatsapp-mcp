@@ -460,10 +460,24 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 }
 
 // Handle regular incoming messages with media support
+// normalizeChat maps a DM addressed by LID (xxx@lid) to the phone-number JID, so the same person
+// is always one chat (findable by phone/contact name) no matter how WhatsApp addressed the message.
+func normalizeChat(client *whatsmeow.Client, jid types.JID) types.JID {
+	if jid.Server != types.HiddenUserServer {
+		return jid
+	}
+	if pn, err := client.Store.LIDs.GetPNForLID(context.Background(), jid); err == nil && !pn.IsEmpty() {
+		return pn.ToNonAD()
+	}
+	return jid
+}
+
 func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *events.Message, logger waLog.Logger) {
 	// Save message to database
+	msg.Info.Chat = normalizeChat(client, msg.Info.Chat)
 	chatJID := msg.Info.Chat.String()
-	sender := msg.Info.Sender.User
+	// Display sender by phone number (resolves to contact names); sender_jid keeps the real JID for receipts.
+	sender := normalizeChat(client, msg.Info.Sender).User
 
 	// Get appropriate chat name (pass nil for conversation since we don't have one for regular messages)
 	name := GetChatName(client, messageStore, msg.Info.Chat, chatJID, nil, sender, logger)
@@ -1221,6 +1235,8 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 			logger.Warnf("Failed to parse JID %s: %v", chatJID, err)
 			continue
 		}
+		jid = normalizeChat(client, jid)
+		chatJID = jid.String()
 
 		// Get appropriate chat name by passing the history sync conversation directly
 		name := GetChatName(client, messageStore, jid, chatJID, conversation, "", logger)
