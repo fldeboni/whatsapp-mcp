@@ -234,8 +234,15 @@ def mark_chats_as_read(chat_jids: List[str]) -> List[Dict[str, Any]]:
     Args:
         chat_jids: List of chat JIDs to mark as read
     """
+    # Human-like pacing: a person opens/marks one chat every few seconds, never a burst.
+    # Random order and jittered gaps (4-12s, occasionally a longer 15-30s pause) keep it from looking scripted.
+    import random, time
+    jids = list(dict.fromkeys(chat_jids))
+    random.shuffle(jids)
     results = []
-    for jid in chat_jids:
+    for i, jid in enumerate(jids):
+        if i > 0:
+            time.sleep(random.uniform(15, 30) if random.random() < 0.15 else random.uniform(4, 12))
         success, status_message = whatsapp_mark_chat_as_read(jid)
         results.append({"chat_jid": jid, "success": success, "message": status_message})
     return results
