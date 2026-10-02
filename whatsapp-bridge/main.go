@@ -25,6 +25,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -126,6 +127,11 @@ func NewMessageStore() (*MessageStore, error) {
 		return nil, fmt.Errorf("failed to create tables: %v", err)
 	}
 
+	// Full sender JID (user@lid / user@s.whatsapp.net): `sender` only keeps the user part,
+	// which is not enough to send read receipts. Ignore the error when the column already exists.
+	db.Exec(`ALTER TABLE messages ADD COLUMN sender_jid TEXT`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS read_marks (chat_jid TEXT PRIMARY KEY, marked_until TIMESTAMP)`)
+
 	return &MessageStore{db: db}, nil
 }
 
@@ -144,7 +150,7 @@ func (store *MessageStore) StoreChat(jid, name string, lastMessageTime time.Time
 }
 
 // Store a message in the database
-func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
+func (store *MessageStore) StoreMessage(id, chatJID, sender, senderJID, content string, timestamp time.Time, isFromMe bool,
 	mediaType, filename, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error {
 	// Only store if there's actual content or media
 	if content == "" && mediaType == "" {
@@ -152,10 +158,10 @@ func (store *MessageStore) StoreMessage(id, chatJID, sender, content string, tim
 	}
 
 	_, err := store.db.Exec(
-		`INSERT OR REPLACE INTO messages 
-		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, chatJID, sender, content, timestamp, isFromMe, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength,
+		`INSERT OR REPLACE INTO messages
+		(id, chat_jid, sender, sender_jid, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, chatJID, sender, senderJID, content, timestamp, isFromMe, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength,
 	)
 	return err
 }
@@ -484,6 +490,7 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 		msg.Info.ID,
 		chatJID,
 		sender,
+		msg.Info.Sender.ToNonAD().String(),
 		content,
 		msg.Info.Timestamp,
 		msg.Info.IsFromMe,
@@ -701,24 +708,123 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	return true, mediaType, filename, absPath, nil
 }
 
-// markChatAsRead sends the app state patch that clears the chat's unread badge on all devices.
-// Only the last message timestamp is sent: the stored sender is a bare user part, not enough to rebuild the message key.
+// groupSenderServer tells whether a group addresses participants by LID or phone number,
+// needed to rebuild full sender JIDs for rows stored before sender_jid existed.
+var groupSenderServer = map[string]string{}
+
+func senderServerFor(client *whatsmeow.Client, chat types.JID) string {
+	if s, ok := groupSenderServer[chat.String()]; ok {
+		return s
+	}
+	server := types.DefaultUserServer
+	if info, err := client.GetGroupInfo(context.Background(), chat); err == nil && info.AddressingMode == types.AddressingModeLID {
+		server = types.HiddenUserServer
+	}
+	groupSenderServer[chat.String()] = server
+	return server
+}
+
+// markChatAsRead does what WhatsApp Web does when you open a chat: read receipts for the incoming
+// messages (one receipt per sender), then the "mark chat as read" app state patch keyed on the last message.
+// The phone only clears the unread badge with the receipts; the patch alone (timestamp only) is ignored.
 func markChatAsRead(client *whatsmeow.Client, messageStore *MessageStore, chatJID string) (bool, string) {
-	jid, err := types.ParseJID(chatJID)
+	ctx := context.Background()
+	chat, err := types.ParseJID(chatJID)
 	if err != nil {
 		return false, fmt.Sprintf("invalid chat JID: %v", err)
 	}
+	isGroup := chat.Server == types.GroupServer
 
-	var lastTS time.Time
-	err = messageStore.db.QueryRow("SELECT last_message_time FROM chats WHERE jid = ?", chatJID).Scan(&lastTS)
+	// Incoming messages not yet marked: since the last mark, at most 3 days back, newest 300.
+	since := time.Now().Add(-72 * time.Hour)
+	var marked time.Time
+	if messageStore.db.QueryRow("SELECT marked_until FROM read_marks WHERE chat_jid = ?", chatJID).Scan(&marked) == nil && marked.After(since) {
+		since = marked
+	}
+	rows, err := messageStore.db.Query(
+		`SELECT id, sender, COALESCE(sender_jid, ''), timestamp FROM messages
+		 WHERE chat_jid = ? AND is_from_me = 0 AND timestamp > ? ORDER BY timestamp DESC LIMIT 300`,
+		chatJID, since)
 	if err != nil {
-		lastTS = time.Now()
+		return false, fmt.Sprintf("failed to query messages: %v", err)
+	}
+	type pending struct {
+		ids    []types.MessageID
+		sender types.JID
+	}
+	bySender := map[string]*pending{}
+	var order []string
+	var lastID, lastSender string
+	var lastTS time.Time
+	for rows.Next() {
+		var id, sender, senderJID string
+		var ts time.Time
+		if rows.Scan(&id, &sender, &senderJID, &ts) != nil {
+			continue
+		}
+		if lastID == "" {
+			lastID, lastTS = id, ts
+		}
+		var sjid types.JID
+		if isGroup {
+			if senderJID == "" && strings.Contains(sender, "@") {
+				senderJID = sender
+			}
+			if senderJID != "" {
+				sjid, _ = types.ParseJID(senderJID)
+			} else if sender != "" {
+				sjid = types.NewJID(sender, senderServerFor(client, chat))
+			}
+			if sjid.IsEmpty() {
+				continue
+			}
+		}
+		if lastSender == "" && !sjid.IsEmpty() {
+			lastSender = sjid.String()
+		}
+		key := sjid.String()
+		if bySender[key] == nil {
+			bySender[key] = &pending{sender: sjid}
+			order = append(order, key)
+		}
+		bySender[key].ids = append(bySender[key].ids, id)
+	}
+	rows.Close()
+
+	receipts, total := 0, 0
+	for _, key := range order {
+		p := bySender[key]
+		total += len(p.ids)
+		for start := 0; start < len(p.ids); start += 50 {
+			end := start + 50
+			if end > len(p.ids) {
+				end = len(p.ids)
+			}
+			if err := client.MarkRead(ctx, p.ids[start:end], time.Now(), chat, p.sender); err != nil {
+				return false, fmt.Sprintf("failed to send read receipt in %s: %v", chatJID, err)
+			}
+			receipts++
+			// Web sends these as a quick burst when a chat is opened; a small gap keeps it from being instant.
+			time.Sleep(time.Duration(150+rand.Intn(350)) * time.Millisecond)
+		}
 	}
 
-	if err := client.SendAppState(context.Background(), appstate.BuildMarkChatAsRead(jid, true, lastTS, nil)); err != nil {
-		return false, fmt.Sprintf("failed to mark %s as read: %v", chatJID, err)
+	if lastTS.IsZero() {
+		messageStore.db.QueryRow("SELECT last_message_time FROM chats WHERE jid = ?", chatJID).Scan(&lastTS)
 	}
-	return true, fmt.Sprintf("Marked %s as read", chatJID)
+	var lastKey *waCommon.MessageKey
+	if lastID != "" {
+		lastKey = &waCommon.MessageKey{RemoteJID: proto.String(chatJID), FromMe: proto.Bool(false), ID: proto.String(lastID)}
+		if isGroup && lastSender != "" {
+			lastKey.Participant = proto.String(lastSender)
+		}
+	}
+	if err := client.SendAppState(ctx, appstate.BuildMarkChatAsRead(chat, true, lastTS, lastKey)); err != nil {
+		return false, fmt.Sprintf("receipts sent (%d) but app state failed for %s: %v", receipts, chatJID, err)
+	}
+
+	messageStore.db.Exec("INSERT OR REPLACE INTO read_marks (chat_jid, marked_until) VALUES (?, ?)", chatJID, time.Now())
+	return true, fmt.Sprintf("Marked %s as read (%d messages, %d receipts)", chatJID, total, receipts)
 }
 
 // Extract direct path from a WhatsApp media URL
@@ -1172,7 +1278,7 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 				}
 
 				// Determine sender
-				var sender string
+				var sender, senderJID string
 				isFromMe := false
 				if msg.Message.Key != nil {
 					if msg.Message.Key.FromMe != nil {
@@ -1180,13 +1286,17 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 					}
 					if !isFromMe && msg.Message.Key.Participant != nil && *msg.Message.Key.Participant != "" {
 						sender = *msg.Message.Key.Participant
+						senderJID = sender
 					} else if isFromMe {
 						sender = client.Store.ID.User
+						senderJID = client.Store.ID.ToNonAD().String()
 					} else {
 						sender = jid.User
+						senderJID = jid.ToNonAD().String()
 					}
 				} else {
 					sender = jid.User
+					senderJID = jid.ToNonAD().String()
 				}
 
 				// Store message
@@ -1207,6 +1317,7 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 					msgID,
 					chatJID,
 					sender,
+					senderJID,
 					content,
 					timestamp,
 					isFromMe,
