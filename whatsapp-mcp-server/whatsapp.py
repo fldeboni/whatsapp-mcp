@@ -7,7 +7,10 @@ import requests
 import json
 import audio
 
-MESSAGES_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'messages.db')
+# Same location the bridge uses (outside OneDrive): WHATSAPP_STORE_DIR or %LOCALAPPDATA%\whatsapp-mcp\store
+STORE_DIR = os.environ.get('WHATSAPP_STORE_DIR') or os.path.join(
+    os.environ.get('LOCALAPPDATA') or os.path.expanduser('~/.cache'), 'whatsapp-mcp', 'store')
+MESSAGES_DB_PATH = os.path.join(STORE_DIR, 'messages.db')
 WHATSAPP_API_BASE_URL = "http://localhost:8080/api"
 
 @dataclass
@@ -329,14 +332,14 @@ def list_chats(
         cursor = conn.cursor()
         
         # Build base query
-        query_parts = ["""
-            SELECT 
+        last_cols = ("messages.content, messages.sender, messages.is_from_me"
+                     if include_last_message else "NULL, NULL, NULL")
+        query_parts = [f"""
+            SELECT
                 chats.jid,
                 chats.name,
                 chats.last_message_time,
-                messages.content as last_message,
-                messages.sender as last_sender,
-                messages.is_from_me as last_is_from_me
+                {last_cols}
             FROM chats
         """]
         

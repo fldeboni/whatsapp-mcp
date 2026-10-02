@@ -1,3 +1,7 @@
+import builtins, functools, sys
+# stdout is the MCP stdio channel: any stray print() from whatsapp.py/audio.py would corrupt it.
+builtins.print = functools.partial(builtins.print, file=sys.stderr)
+
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
 from whatsapp import (

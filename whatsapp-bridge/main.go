@@ -41,6 +41,41 @@ type Message struct {
 	Filename  string
 }
 
+// storeDir returns where session keys, messages and media live.
+// Defaults to %LOCALAPPDATA%\whatsapp-mcp\store so nothing ends up in a synced folder (OneDrive).
+func storeDir() string {
+	if dir := os.Getenv("WHATSAPP_STORE_DIR"); dir != "" {
+		return dir
+	}
+	if base, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(base, "whatsapp-mcp", "store")
+	}
+	return "store"
+}
+
+// storeDSN builds a sqlite DSN for a file inside storeDir.
+func storeDSN(name string) string {
+	return "file:" + filepath.ToSlash(filepath.Join(storeDir(), name)) + "?_foreign_keys=on"
+}
+
+// safeFilename strips any path components from a sender-controlled file name,
+// so a document named "..\..\Startup\x.bat" cannot be written outside the chat folder.
+func safeFilename(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = filepath.Base(name)
+	name = strings.Map(func(r rune) rune {
+		if r < 32 || strings.ContainsRune(`<>:"/\|?*`, r) {
+			return '_'
+		}
+		return r
+	}, name)
+	name = strings.Trim(name, ". ")
+	if name == "" {
+		name = "file_" + time.Now().Format("20060102_150405")
+	}
+	return name
+}
+
 // Database handler for storing message history
 type MessageStore struct {
 	db *sql.DB
@@ -49,12 +84,12 @@ type MessageStore struct {
 // Initialize message store
 func NewMessageStore() (*MessageStore, error) {
 	// Create directory for database if it doesn't exist
-	if err := os.MkdirAll("store", 0755); err != nil {
+	if err := os.MkdirAll(storeDir(), 0700); err != nil {
 		return nil, fmt.Errorf("failed to create store directory: %v", err)
 	}
 
 	// Open SQLite database for messages
-	db, err := sql.Open("sqlite3", "file:store/messages.db?_foreign_keys=on")
+	db, err := sql.Open("sqlite3", storeDSN("messages.db"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open message database: %v", err)
 	}
@@ -562,7 +597,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	var err error
 
 	// First, check if we already have this file
-	chatDir := fmt.Sprintf("store/%s", strings.ReplaceAll(chatJID, ":", "_"))
+	chatDir := filepath.Join(storeDir(), safeFilename(strings.ReplaceAll(chatJID, ":", "_")))
 	localPath := ""
 
 	// Get media info from the database
@@ -591,7 +626,8 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	}
 
 	// Generate a local path for the file
-	localPath = fmt.Sprintf("%s/%s", chatDir, filename)
+	filename = safeFilename(filename)
+	localPath = filepath.Join(chatDir, filename)
 
 	// Get absolute path
 	absPath, err := filepath.Abs(localPath)
@@ -641,7 +677,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	}
 
 	// Download the media using whatsmeow client
-	mediaData, err := client.Download(downloader)
+	mediaData, err := client.Download(context.Background(), downloader)
 	if err != nil {
 		return false, "", "", "", fmt.Errorf("failed to download media: %v", err)
 	}
@@ -775,7 +811,8 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	})
 
 	// Start the server
-	serverAddr := fmt.Sprintf(":%d", port)
+	// Loopback only: the API has no auth, so it must never be reachable from the network.
+	serverAddr := fmt.Sprintf("127.0.0.1:%d", port)
 	fmt.Printf("Starting REST API server on %s...\n", serverAddr)
 
 	// Run server in a goroutine so it doesn't block
@@ -795,19 +832,20 @@ func main() {
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
 	// Create directory for database if it doesn't exist
-	if err := os.MkdirAll("store", 0755); err != nil {
+	if err := os.MkdirAll(storeDir(), 0700); err != nil {
 		logger.Errorf("Failed to create store directory: %v", err)
 		return
 	}
+	logger.Infof("Store directory: %s", storeDir())
 
-	container, err := sqlstore.New("sqlite3", "file:store/whatsapp.db?_foreign_keys=on", dbLog)
+	container, err := sqlstore.New(context.Background(), "sqlite3", storeDSN("whatsapp.db"), dbLog)
 	if err != nil {
 		logger.Errorf("Failed to connect to database: %v", err)
 		return
 	}
 
 	// Get device store - This contains session information
-	deviceStore, err := container.GetFirstDevice()
+	deviceStore, err := container.GetFirstDevice(context.Background())
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No device exists, create one
@@ -973,7 +1011,7 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 
 		// If we didn't get a name, try group info
 		if name == "" {
-			groupInfo, err := client.GetGroupInfo(jid)
+			groupInfo, err := client.GetGroupInfo(context.Background(), jid)
 			if err == nil && groupInfo.Name != "" {
 				name = groupInfo.Name
 			} else {
@@ -988,7 +1026,7 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 		logger.Infof("Getting name for contact: %s", chatJID)
 
 		// Just use contact info (full name)
-		contact, err := client.Store.Contacts.GetContact(jid)
+		contact, err := client.Store.Contacts.GetContact(context.Background(), jid)
 		if err == nil && contact.FullName != "" {
 			name = contact.FullName
 		} else if sender != "" {
