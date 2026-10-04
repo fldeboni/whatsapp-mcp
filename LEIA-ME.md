@@ -5,8 +5,15 @@ Tudo roda local: suas conversas ficam em `%LOCALAPPDATA%\whatsapp-mcp` e não v�
 
 ## Instalar (uns 10 minutos)
 
-1. Extraia o zip numa pasta (ex.: `Documentos\whatsapp-mcp`).
-2. Abra o PowerShell **nessa pasta** e rode:
+Você precisa de acesso ao repositório privado `fldeboni/whatsapp-mcp` (peça ao Felipe para te adicionar pelo seu usuário do GitHub)
+e do Git (se não tiver: `winget install -e --id Git.Git`, depois feche e abra o PowerShell).
+
+1. Baixe o projeto (na primeira vez abre o login do GitHub no navegador):
+   ```
+   git clone https://github.com/fldeboni/whatsapp-mcp.git
+   cd whatsapp-mcp
+   ```
+2. Rode:
    ```
    powershell -ExecutionPolicy Bypass -File .\install.ps1
    ```
@@ -23,6 +30,21 @@ Exemplos de pedidos:
 - "Resume o grupo X da última semana"
 - "Marca os grupos de promoção como lidos"
 - "Manda pro Fulano: ..." (o Claude sempre pede sua confirmação antes de enviar)
+
+## Atualizar
+
+Quando houver melhorias, na pasta do projeto:
+```
+powershell -ExecutionPolicy Bypass -File .\update.ps1
+```
+Mostra o que mudou, recompila e mantém sua sessão (não precisa escanear o QR de novo).
+Se você instalou por um zip antigo, o `update.ps1` explica como migrar para o repositório (uma vez só).
+
+## Marcar grupos como lidos automaticamente (opcional)
+
+Copie `auto-markread.example.json` para `%LOCALAPPDATA%\whatsapp-mcp\auto-markread.json` e coloque os grupos em `chats`
+(ou peça ao Claude: *"configure o auto-markread com meus grupos de promoção"*). O bridge marca esses grupos como lidos
+a cada 30–60 min (aleatório), só entre 07:00 e 22:00, com pausas de humano entre um grupo e outro. Edições no arquivo valem no ciclo seguinte.
 
 ## Importante
 

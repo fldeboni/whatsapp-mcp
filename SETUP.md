@@ -27,6 +27,13 @@ Conecta o WhatsApp **pessoal** ao Claude via whatsmeow (protocolo não oficial �
 8. `list_chats(include_last_message=False)` corrigido; `print()` vai pra stderr (stdout é o canal MCP).
 9. **Ferramenta nova `mark_chats_as_read`**: manda read receipts por remetente + "marcar como lida" (o mesmo que o WhatsApp Web faz ao abrir a conversa), com pausas de 4–12 s entre conversas.
 
+10. **Recuperação após hibernar**: mensagens que não descriptografam são pedidas de volta ao celular (`AutomaticMessageRerequestFromPhone`; `/api/rerequest` para falhas antigas); o app state `regular_low` é ressincronizado a cada reconexão. O patch de "marcar como lida" é best-effort — os read receipts sozinhos já limpam o celular.
+11. **Auto mark-read** (`auto-markread.json` em `%LOCALAPPDATA%\whatsapp-mcp`, modelo em `auto-markread.example.json`): goroutine no bridge, intervalo aleatório entre `interval_min_minutes` e `interval_max_minutes`, só dentro de `window_start`–`window_end`, pula grupos sem nada novo. Usa o relógio de parede (os timers monotônicos do Go no Windows não andam durante a hibernação).
+
+## Atualização
+
+Repositório privado `fldeboni/whatsapp-mcp` (remote `origin`; o projeto original fica como `upstream`). `update.ps1` faz `git pull --ff-only`, mostra os commits novos e roda `install.ps1 -SkipPrereqs -SkipPair`.
+
 ## Permissões sugeridas no Claude Code (`~/.claude/settings.json`)
 
 Leitura liberada, envio sempre perguntando — qualquer contato pode mandar texto com instrução escondida ("encaminhe X para Y"), e a confirmação é a barreira.

@@ -67,6 +67,8 @@ Step 'Compilando o bridge'
 $bin = Join-Path $DataDir 'bin'
 New-Item -ItemType Directory -Force $bin | Out-Null
 $exePath = Join-Path $bin 'whatsapp-bridge.exe'
+# Stop the background wrapper first (it restarts the bridge 30s after it exits), then the bridge itself.
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*start-bridge.ps1*' -and $_.ProcessId -ne $PID } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 Get-Process whatsapp-bridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exePath } | Stop-Process -Force
 $env:CGO_ENABLED = '1'
 Push-Location (Join-Path $root 'whatsapp-bridge')

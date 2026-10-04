@@ -746,6 +746,139 @@ func senderServerFor(client *whatsmeow.Client, chat types.JID) string {
 	return server
 }
 
+// unmarkedSince is the cutoff for "incoming messages not yet marked as read": the last mark, at most 3 days back.
+func unmarkedSince(messageStore *MessageStore, chatJID string) time.Time {
+	since := time.Now().Add(-72 * time.Hour)
+	var marked time.Time
+	if messageStore.db.QueryRow("SELECT marked_until FROM read_marks WHERE chat_jid = ?", chatJID).Scan(&marked) == nil && marked.After(since) {
+		since = marked
+	}
+	return since
+}
+
+func pendingIncoming(messageStore *MessageStore, chatJID string) int {
+	var n int
+	messageStore.db.QueryRow("SELECT COUNT(*) FROM messages WHERE chat_jid = ? AND is_from_me = 0 AND timestamp > ?",
+		chatJID, unmarkedSince(messageStore, chatJID)).Scan(&n)
+	return n
+}
+
+// ---- Auto mark-as-read -----------------------------------------------------------------------
+// Config: <data dir>\auto-markread.json (next to the store folder), re-read on every cycle, so edits
+// apply without restarting. Missing file or "enabled": false = feature off.
+
+type autoMarkReadConfig struct {
+	Enabled     bool     `json:"enabled"`
+	WindowStart string   `json:"window_start"`         // "07:00"
+	WindowEnd   string   `json:"window_end"`           // "22:00"
+	MinMinutes  int      `json:"interval_min_minutes"` // 30
+	MaxMinutes  int      `json:"interval_max_minutes"` // 60
+	Chats       []string `json:"chats"`                // chat JIDs (groups end with @g.us)
+}
+
+func autoMarkReadConfigPath() string {
+	return filepath.Join(filepath.Dir(storeDir()), "auto-markread.json")
+}
+
+func loadAutoMarkRead() (*autoMarkReadConfig, error) {
+	cfg := &autoMarkReadConfig{WindowStart: "07:00", WindowEnd: "22:00", MinMinutes: 30, MaxMinutes: 60}
+	data, err := os.ReadFile(autoMarkReadConfigPath())
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, err
+	}
+	if cfg.MinMinutes < 5 {
+		cfg.MinMinutes = 5
+	}
+	if cfg.MaxMinutes < cfg.MinMinutes {
+		cfg.MaxMinutes = cfg.MinMinutes
+	}
+	return cfg, nil
+}
+
+// atClock returns today's date at "HH:MM" local time.
+func atClock(day time.Time, hm string) time.Time {
+	var h, m int
+	fmt.Sscanf(hm, "%d:%d", &h, &m)
+	return time.Date(day.Year(), day.Month(), day.Day(), h, m, 0, 0, time.Local)
+}
+
+func randMinutes(min, max int) time.Duration {
+	return time.Duration(min*60+rand.Intn((max-min)*60+1)) * time.Second
+}
+
+// nextAutoRun picks the next run time: now + random interval, pushed into the allowed window.
+func nextAutoRun(cfg *autoMarkReadConfig, from time.Time) time.Time {
+	next := from.Add(randMinutes(cfg.MinMinutes, cfg.MaxMinutes))
+	start, end := atClock(next, cfg.WindowStart), atClock(next, cfg.WindowEnd)
+	switch {
+	case next.Before(start):
+		return start.Add(randMinutes(0, 20))
+	case !next.Before(end):
+		return atClock(next.AddDate(0, 0, 1), cfg.WindowStart).Add(randMinutes(0, 20))
+	}
+	return next
+}
+
+func runAutoMarkRead(client *whatsmeow.Client, messageStore *MessageStore, cfg *autoMarkReadConfig, logger waLog.Logger) {
+	chats := append([]string(nil), cfg.Chats...)
+	rand.Shuffle(len(chats), func(i, j int) { chats[i], chats[j] = chats[j], chats[i] })
+	done := 0
+	for _, chatJID := range chats {
+		if !client.IsConnected() {
+			logger.Warnf("auto mark-read: not connected, stopping this cycle")
+			return
+		}
+		if pendingIncoming(messageStore, chatJID) == 0 {
+			continue // nothing new: don't touch the chat at all
+		}
+		if done > 0 {
+			// Same human pacing as the MCP tool: 4-12s between chats, sometimes a longer pause.
+			if rand.Float64() < 0.15 {
+				time.Sleep(time.Duration(15+rand.Intn(16)) * time.Second)
+			} else {
+				time.Sleep(time.Duration(4+rand.Intn(9)) * time.Second)
+			}
+		}
+		ok, msg := markChatAsRead(client, messageStore, chatJID)
+		if ok {
+			done++
+		}
+		logger.Infof("auto mark-read: %s", msg)
+	}
+	logger.Infof("auto mark-read: cycle done, %d chats marked", done)
+}
+
+// startAutoMarkRead runs forever. It polls the wall clock every minute instead of sleeping until the
+// target: on Windows Go's monotonic timers don't advance while the laptop sleeps/hibernates.
+func startAutoMarkRead(client *whatsmeow.Client, messageStore *MessageStore, logger waLog.Logger) {
+	go func() {
+		next := time.Now().Add(randMinutes(1, 5)) // never a burst right at startup
+		for {
+			time.Sleep(time.Minute)
+			now := time.Now().Round(0) // strip monotonic reading: compare wall clock
+			if now.Before(next) {
+				continue
+			}
+			cfg, err := loadAutoMarkRead()
+			if err != nil || !cfg.Enabled || len(cfg.Chats) == 0 {
+				next = now.Add(10 * time.Minute)
+				continue
+			}
+			if start, end := atClock(now, cfg.WindowStart), atClock(now, cfg.WindowEnd); now.Before(start) || !now.Before(end) {
+				next = nextAutoRun(cfg, now)
+				logger.Infof("auto mark-read: outside %s-%s, next run %s", cfg.WindowStart, cfg.WindowEnd, next.Format("02/01 15:04"))
+				continue
+			}
+			runAutoMarkRead(client, messageStore, cfg, logger)
+			next = nextAutoRun(cfg, time.Now().Round(0))
+			logger.Infof("auto mark-read: next run %s", next.Format("02/01 15:04"))
+		}
+	}()
+}
+
 // markChatAsRead does what WhatsApp Web does when you open a chat: read receipts for the incoming
 // messages (one receipt per sender), then the "mark chat as read" app state patch keyed on the last message.
 // The phone only clears the unread badge with the receipts; the patch alone (timestamp only) is ignored.
@@ -758,11 +891,7 @@ func markChatAsRead(client *whatsmeow.Client, messageStore *MessageStore, chatJI
 	isGroup := chat.Server == types.GroupServer
 
 	// Incoming messages not yet marked: since the last mark, at most 3 days back, newest 300.
-	since := time.Now().Add(-72 * time.Hour)
-	var marked time.Time
-	if messageStore.db.QueryRow("SELECT marked_until FROM read_marks WHERE chat_jid = ?", chatJID).Scan(&marked) == nil && marked.After(since) {
-		since = marked
-	}
+	since := unmarkedSince(messageStore, chatJID)
 	rows, err := messageStore.db.Query(
 		`SELECT id, sender, COALESCE(sender_jid, ''), timestamp FROM messages
 		 WHERE chat_jid = ? AND is_from_me = 0 AND timestamp > ? ORDER BY timestamp DESC LIMIT 300`,
@@ -1177,6 +1306,9 @@ func main() {
 
 	// Start REST API server
 	startRESTServer(client, messageStore, 8080)
+
+	// Periodic mark-as-read of the chats listed in auto-markread.json (off when the file is missing)
+	startAutoMarkRead(client, messageStore, logger)
 
 	// Create a channel to keep the main goroutine alive
 	exitChan := make(chan os.Signal, 1)

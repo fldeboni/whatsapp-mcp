@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "window_start": "07:00",
+  "window_end": "22:00",
+  "interval_min_minutes": 30,
+  "interval_max_minutes": 60,
+  "chats": [
+    "120363000000000000@g.us"
+  ]
+}
