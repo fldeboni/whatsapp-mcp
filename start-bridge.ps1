@@ -20,8 +20,8 @@ if ($Log) {
     # Reconecta sozinho se cair (rede, sleep do notebook).
     while ($true) {
         $logFile = Join-Path $logDir ("bridge-{0:yyyyMMdd}.log" -f (Get-Date))
-        & $exe *>> $logFile
-        Add-Content $logFile "[$(Get-Date -Format s)] bridge saiu (exit $LASTEXITCODE), reiniciando em 30s"
+        & $exe 2>&1 | ForEach-Object { "$_" } | Out-File -FilePath $logFile -Append -Encoding utf8
+        "[$(Get-Date -Format s)] bridge saiu (exit $LASTEXITCODE), reiniciando em 30s" | Out-File -FilePath $logFile -Append -Encoding utf8
         Start-Sleep -Seconds 30
     }
 } else {

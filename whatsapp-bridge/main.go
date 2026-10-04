@@ -841,12 +841,19 @@ func markChatAsRead(client *whatsmeow.Client, messageStore *MessageStore, chatJI
 			lastKey.Participant = proto.String(lastSender)
 		}
 	}
+	// Best effort: the receipts are what clear the badge on the phone. The app state patch can fail with
+	// 409/"mismatching LTHash" when the local regular_low state is out of sync, which must not fail the call.
+	note := ""
 	if err := client.SendAppState(ctx, appstate.BuildMarkChatAsRead(chat, true, lastTS, lastKey)); err != nil {
-		return false, fmt.Sprintf("receipts sent (%d) but app state failed for %s: %v", receipts, chatJID, err)
+		fmt.Printf("markread %s: app state patch skipped: %v\n", chatJID, err)
+		note = ", app state skipped"
+	}
+	if receipts == 0 && note != "" {
+		return false, fmt.Sprintf("nothing to mark in %s (no stored incoming messages) and app state failed", chatJID)
 	}
 
 	messageStore.db.Exec("INSERT OR REPLACE INTO read_marks (chat_jid, marked_until) VALUES (?, ?)", chatJID, time.Now())
-	return true, fmt.Sprintf("Marked %s as read (%d messages, %d receipts)", chatJID, total, receipts)
+	return true, fmt.Sprintf("Marked %s as read (%d messages, %d receipts%s)", chatJID, total, receipts, note)
 }
 
 // Extract direct path from a WhatsApp media URL
@@ -991,6 +998,38 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 		json.NewEncoder(w).Encode(SendMessageResponse{Success: success, Message: message})
 	})
 
+	// Handler for asking the phone to resend a message that failed to decrypt
+	http.HandleFunc("/api/rerequest", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ChatJID   string `json:"chat_jid"`
+			SenderJID string `json:"sender_jid"`
+			ID        string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ChatJID == "" || req.SenderJID == "" || req.ID == "" {
+			http.Error(w, "chat_jid, sender_jid and id are required", http.StatusBadRequest)
+			return
+		}
+		chat, err1 := types.ParseJID(req.ChatJID)
+		sender, err2 := types.ParseJID(req.SenderJID)
+		w.Header().Set("Content-Type", "application/json")
+		if err1 != nil || err2 != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(SendMessageResponse{Success: false, Message: "invalid JID"})
+			return
+		}
+		_, err := client.SendPeerMessage(context.Background(), client.BuildUnavailableMessageRequest(chat, sender.ToNonAD(), req.ID))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(SendMessageResponse{Success: false, Message: err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(SendMessageResponse{Success: true, Message: "requested from phone"})
+	})
+
 	// Start the server
 	// Loopback only: the API has no auth, so it must never be reachable from the network.
 	serverAddr := fmt.Sprintf("127.0.0.1:%d", port)
@@ -1044,6 +1083,9 @@ func main() {
 		logger.Errorf("Failed to create WhatsApp client")
 		return
 	}
+	// Messages that fail to decrypt (typical after the laptop sleeps: "no sender key") are re-requested
+	// from the phone instead of being silently lost.
+	client.AutomaticMessageRerequestFromPhone = true
 
 	// Initialize message store
 	messageStore, err := NewMessageStore()
@@ -1066,6 +1108,15 @@ func main() {
 
 		case *events.Connected:
 			logger.Infof("Connected to WhatsApp")
+			// After sleep/hibernation the regular_low app state (read/archive/mute) can fail with
+			// "mismatching LTHash" on every notification; a full re-fetch resets the local hash state.
+			go func() {
+				if err := client.FetchAppState(context.Background(), appstate.WAPatchRegularLow, true, false); err != nil {
+					logger.Warnf("Full app state resync failed: %v", err)
+				} else {
+					logger.Infof("App state regular_low resynced")
+				}
+			}()
 
 		case *events.LoggedOut:
 			logger.Warnf("Device logged out, please scan QR code to log in again")
