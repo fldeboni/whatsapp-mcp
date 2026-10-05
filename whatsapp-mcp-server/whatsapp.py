@@ -737,15 +737,12 @@ def send_audio_message(recipient: str, media_path: str) -> Tuple[bool, str]:
     except Exception as e:
         return False, f"Unexpected error: {str(e)}"
 
-def download_media(message_id: str, chat_jid: str) -> Optional[str]:
-    """Download media from a message and return the local file path.
-    
-    Args:
-        message_id: The ID of the message containing the media
-        chat_jid: The JID of the chat containing the message
-    
+def download_media(message_id: str, chat_jid: str) -> Tuple[Optional[str], str]:
+    """Download media from a message.
+
     Returns:
-        The local file path if download was successful, None otherwise
+        (local file path or None, status message) — the message carries the bridge's real error
+        so Claude can tell "expired/forbidden" from "not a media message" instead of a bare failure.
     """
     try:
         url = f"{WHATSAPP_API_BASE_URL}/download"
@@ -753,28 +750,14 @@ def download_media(message_id: str, chat_jid: str) -> Optional[str]:
             "message_id": message_id,
             "chat_jid": chat_jid
         }
-        
-        response = requests.post(url, json=payload)
-        
-        if response.status_code == 200:
+
+        response = requests.post(url, json=payload, timeout=300)
+        try:
             result = response.json()
-            if result.get("success", False):
-                path = result.get("path")
-                print(f"Media downloaded successfully: {path}")
-                return path
-            else:
-                print(f"Download failed: {result.get('message', 'Unknown error')}")
-                return None
-        else:
-            print(f"Error: HTTP {response.status_code} - {response.text}")
-            return None
-            
+        except ValueError:
+            return None, f"HTTP {response.status_code} - {response.text[:300]}"
+        if response.status_code == 200 and result.get("success", False):
+            return result.get("path"), result.get("message", "Media downloaded successfully")
+        return None, result.get("message", f"HTTP {response.status_code}")
     except requests.RequestException as e:
-        print(f"Request error: {str(e)}")
-        return None
-    except json.JSONDecodeError:
-        print(f"Error parsing response: {response.text}")
-        return None
-    except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        return None
+        return None, f"Bridge not reachable (is whatsapp-bridge running?): {e}"
