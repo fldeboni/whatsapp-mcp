@@ -82,6 +82,11 @@ Problemas já conhecidos:
 - **`No module named 'mcp.server.fastmcp'`**: o `pyproject.toml` precisa ter `mcp[cli]>=1.6.0,<2`. Não mude isso.
 - **Erro de CGO / `gcc` não encontrado**: o WinLibs fica em `%LOCALAPPDATA%\Microsoft\WinGet\Packages\BrechtSanders.WinLibs*\mingw64\bin`; ponha no PATH e rode de novo.
 
+O instalador também grava um bloco de regras no **CLAUDE.md global** da pessoa (`%USERPROFILE%\.claude\CLAUDE.md`, entre os marcadores
+`<!-- whatsapp-mcp:start ... -->` e `<!-- whatsapp-mcp:end -->`, a partir de `claude-global.md`). É isso que faz **toda conversa** do Claude
+saber quais ferramentas do WhatsApp existem, pedir confirmação antes de enviar e não tentar "consertar" o MCP. O resto do arquivo não é tocado;
+a cada `update.ps1` o bloco é atualizado. Confira que o bloco está lá.
+
 Confira: `claude mcp get whatsapp` deve mostrar o servidor (o status pode aparecer como falha até o bridge estar rodando — normal).
 
 ### Etapa 6 — Parear com o WhatsApp (precisa da pessoa)

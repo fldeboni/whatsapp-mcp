@@ -112,6 +112,8 @@ if (-not $SkipRegister) {
         Write-Host '    Claude Desktop: ok (reinicie o app para carregar)'
         $registered = $true
     }
+    # Rules for every Claude conversation (which tools exist, confirm before sending, don't "fix" the MCP)
+    & (Join-Path $root 'register-claude-md.ps1')
     if (-not $registered) {
         Write-Host '    Nao achei Claude Code nem Claude Desktop. Configure manualmente:' -ForegroundColor Yellow
         Write-Host "    comando: $venvPy"

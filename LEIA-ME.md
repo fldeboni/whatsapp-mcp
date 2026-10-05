@@ -39,7 +39,12 @@ Quando houver melhorias, na pasta do projeto:
 ```
 powershell -ExecutionPolicy Bypass -File .\update.ps1
 ```
-Mostra o que mudou, recompila e mantém sua sessão (não precisa escanear o QR de novo).
+Mostra o que mudou, recompila, atualiza as regras do WhatsApp no seu CLAUDE.md global e mantém sua sessão (não precisa escanear o QR de novo).
+Depois de atualizar, **abra uma conversa nova** no Claude: conversas abertas antes continuam com a versão antiga.
+
+As regras que o Claude segue para usar o WhatsApp (confirmar antes de enviar, não mexer na instalação quando algo falhar etc.)
+ficam num bloco do seu `%USERPROFILE%\.claude\CLAUDE.md`, gerado a partir de `claude-global.md`. Não edite dentro do bloco
+(é sobrescrito na atualização); suas regras pessoais podem ficar fora dele.
 Se você instalou por um zip antigo, o `update.ps1` explica como migrar para o repositório (uma vez só).
 
 ## Marcar grupos como lidos automaticamente (opcional)
