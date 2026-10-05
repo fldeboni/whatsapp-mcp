@@ -87,8 +87,9 @@ try {
 } finally { Pop-Location }
 $venvPy = Join-Path $env:UV_PROJECT_ENVIRONMENT 'Scripts\python.exe'
 $mainPy = Join-Path $root 'whatsapp-mcp-server\main.py'
-& $venvPy -c "import sys; sys.path.insert(0, r'$root\whatsapp-mcp-server'); import main; print('    servidor MCP carrega ok')"
-if ($LASTEXITCODE -ne 0) { throw 'O servidor MCP nao carregou.' }
+# Calls every read tool through the MCP layer against a throwaway DB (catches output-validation breakage).
+& $venvPy (Join-Path $root 'whatsapp-mcp-server\test_tools.py')
+if ($LASTEXITCODE -ne 0) { throw 'As ferramentas do MCP falharam no teste (ver acima).' }
 
 # 4. Registro no Claude --------------------------------------------------------
 if (-not $SkipRegister) {
