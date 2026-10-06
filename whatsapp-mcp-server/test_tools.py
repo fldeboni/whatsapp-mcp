@@ -19,6 +19,16 @@ INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me)
 """)
 db.commit()
 
+# Address book (whatsmeow session store): a contact with no synced chat, stored under a LID with a device suffix
+book = sqlite3.connect(os.path.join(store, 'whatsapp.db'))
+book.executescript("""
+CREATE TABLE whatsmeow_contacts (our_jid TEXT, their_jid TEXT, first_name TEXT, full_name TEXT, push_name TEXT, business_name TEXT);
+CREATE TABLE whatsmeow_lid_map (lid TEXT PRIMARY KEY, pn TEXT);
+INSERT INTO whatsmeow_contacts VALUES ('me', '9990001112223:38@lid', NULL, 'Lívia Agenda', NULL, NULL);
+INSERT INTO whatsmeow_lid_map VALUES ('9990001112223', '5500000000009');
+""")
+book.commit()
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import main  # noqa: E402  (must come after WHATSAPP_STORE_DIR is set)
 
@@ -43,6 +53,14 @@ async def run():
         except Exception as e:
             failed += 1
             print(f'FAIL {name}: {str(e)[:200]}')
+    # Address-book search: no accent in the query, LID + device suffix resolved to the phone JID
+    res = await main.mcp.call_tool('search_contacts', {'query': 'livia agenda'})
+    text = ' '.join(getattr(b, 'text', '') for b in (res[0] if isinstance(res, tuple) else res))
+    if '5500000000009@s.whatsapp.net' in text:
+        print('ok   search_contacts (agenda, sem acento, LID->numero)')
+    else:
+        failed += 1
+        print(f'FAIL search_contacts agenda: {text[:200]}')
     return failed
 
 sys.exit(1 if asyncio.run(run()) else 0)

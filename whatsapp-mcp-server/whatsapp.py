@@ -11,6 +11,19 @@ import audio
 STORE_DIR = os.environ.get('WHATSAPP_STORE_DIR') or os.path.join(
     os.environ.get('LOCALAPPDATA') or os.path.expanduser('~/.cache'), 'whatsapp-mcp', 'store')
 MESSAGES_DB_PATH = os.path.join(STORE_DIR, 'messages.db')
+WHATSAPP_DB_PATH = os.path.join(STORE_DIR, 'whatsapp.db')  # whatsmeow session store: address book + LID map (read-only use)
+
+
+def _fold(text) -> str:
+    """Lowercase without accents, so 'livia' matches 'Lívia' and 'joao' matches 'João'."""
+    import unicodedata
+    if text is None:
+        return ''
+    return ''.join(c for c in unicodedata.normalize('NFKD', str(text)) if not unicodedata.combining(c)).lower()
+
+
+def _register_fold(conn) -> None:
+    conn.create_function('fold', 1, _fold, deterministic=True)
 WHATSAPP_API_BASE_URL = "http://localhost:8080/api"
 
 @dataclass
@@ -329,6 +342,7 @@ def list_chats(
     """Get chats matching the specified criteria."""
     try:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
+        _register_fold(conn)
         cursor = conn.cursor()
         
         # Build base query
@@ -353,8 +367,8 @@ def list_chats(
         params = []
         
         if query:
-            where_clauses.append("(LOWER(chats.name) LIKE LOWER(?) OR chats.jid LIKE ?)")
-            params.extend([f"%{query}%", f"%{query}%"])
+            where_clauses.append("(fold(chats.name) LIKE ? OR chats.jid LIKE ?)")
+            params.extend([f"%{_fold(query)}%", f"%{query}%"])
             
         if where_clauses:
             query_parts.append("WHERE " + " AND ".join(where_clauses))
@@ -394,45 +408,50 @@ def list_chats(
 
 
 def search_contacts(query: str) -> List[Contact]:
-    """Search contacts by name or phone number."""
+    """Search contacts by name or phone number — in synced chats AND in the WhatsApp address book
+    (people you never chatted with since install only exist in the address book). Accent-insensitive."""
+    pattern = '%' + _fold(query) + '%'
+    found = {}  # jid -> name
+
+    def add(jid, name):
+        if jid and jid not in found:
+            found[jid] = name
+
     try:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
-        cursor = conn.cursor()
-        
-        # Split query into characters to support partial matching
-        search_pattern = '%' +query + '%'
-        
-        cursor.execute("""
-            SELECT DISTINCT 
-                jid,
-                name
-            FROM chats
-            WHERE 
-                (LOWER(name) LIKE LOWER(?) OR LOWER(jid) LIKE LOWER(?))
-                AND jid NOT LIKE '%@g.us'
-            ORDER BY name, jid
-            LIMIT 50
-        """, (search_pattern, search_pattern))
-        
-        contacts = cursor.fetchall()
-        
-        result = []
-        for contact_data in contacts:
-            contact = Contact(
-                phone_number=contact_data[0].split('@')[0],
-                name=contact_data[1],
-                jid=contact_data[0]
-            )
-            result.append(contact)
-            
-        return result
-        
+        _register_fold(conn)
+        for jid, name in conn.execute("""
+                SELECT jid, name FROM chats
+                WHERE (fold(name) LIKE ? OR jid LIKE ?) AND jid NOT LIKE '%@g.us'
+                ORDER BY last_message_time DESC LIMIT 50""", (pattern, pattern)):
+            add(jid, name)
+        conn.close()
     except sqlite3.Error as e:
-        print(f"Database error: {e}")
-        return []
-    finally:
-        if 'conn' in locals():
-            conn.close()
+        print(f"Database error (chats): {e}")
+
+    try:
+        conn = sqlite3.connect(f'file:{WHATSAPP_DB_PATH}?mode=ro', uri=True)
+        _register_fold(conn)
+        lid_to_pn = dict(conn.execute('SELECT lid, pn FROM whatsmeow_lid_map'))
+        rows = conn.execute("""
+                SELECT their_jid, COALESCE(NULLIF(full_name,''), NULLIF(first_name,''), NULLIF(business_name,''), push_name)
+                FROM whatsmeow_contacts
+                WHERE fold(COALESCE(full_name,'') || ' ' || COALESCE(first_name,'') || ' ' ||
+                           COALESCE(push_name,'') || ' ' || COALESCE(business_name,'')) LIKE ?
+                   OR their_jid LIKE ?
+                LIMIT 100""", (pattern, pattern)).fetchall()
+        conn.close()
+        for jid, name in rows:
+            user, _, server = jid.partition('@')
+            user = user.split(':')[0]                     # drop device suffix (e.g. '1796...:38@lid')
+            jid = f'{user}@{server}'
+            if server == 'lid' and user in lid_to_pn:   # prefer the phone-number JID (what chats/send use)
+                jid = f'{lid_to_pn[user]}@s.whatsapp.net'
+            add(jid, name)
+    except sqlite3.Error as e:
+        print(f"Database error (address book): {e}")
+
+    return [Contact(phone_number=jid.split('@')[0], name=name, jid=jid) for jid, name in list(found.items())[:50]]
 
 
 def get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> List[Chat]:

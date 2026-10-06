@@ -30,6 +30,10 @@ Conecta o WhatsApp **pessoal** ao Claude via whatsmeow (protocolo não oficial �
 10. **Recuperação após hibernar**: mensagens que não descriptografam são pedidas de volta ao celular (`AutomaticMessageRerequestFromPhone`; `/api/rerequest` para falhas antigas); o app state `regular_low` é ressincronizado a cada reconexão. O patch de "marcar como lida" é best-effort — os read receipts sozinhos já limpam o celular.
 11. **Auto mark-read** (`auto-markread.json` em `%LOCALAPPDATA%\whatsapp-mcp`, modelo em `auto-markread.example.json`): goroutine no bridge, intervalo aleatório entre `interval_min_minutes` e `interval_max_minutes`, só dentro de `window_start`–`window_end`, pula grupos sem nada novo. Usa o relógio de parede (os timers monotônicos do Go no Windows não andam durante a hibernação).
 
+12. **Busca de contatos na agenda**: `search_contacts` procura nas conversas E na agenda do WhatsApp (`whatsmeow_contacts`, código LID convertido para número), sem diferenciar acentos (`list_chats` também). Conversas gravadas só com o número ganham nome: o bridge tenta de novo a agenda, e `fix_chat_names.py` corrige o banco (rodado pelo `update.ps1`).
+13. **`request_chat_history`**: busca no celular mensagens antigas de uma conversa (até 50 por vez). **Mensagens interativas** (cartão de chave Pix etc.) são gravadas como texto.
+14. Aparelho aparece como **"Claude (WhatsApp MCP)"**, tipo computador, em Aparelhos conectados (vale para pareamentos novos).
+
 ## Atualização
 
 Repositório privado `fldeboni/whatsapp-mcp` (remote `origin`; o projeto original fica como `upstream`). `update.ps1` faz `git pull --ff-only`, mostra os commits novos e roda `install.ps1 -SkipPrereqs -SkipPair`.

@@ -1456,6 +1456,11 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 	// First, check if chat already exists in database with a name
 	var existingName string
 	err := messageStore.db.QueryRow("SELECT name FROM chats WHERE jid = ?", chatJID).Scan(&existingName)
+	// A name that is just the number (or LID) means the contact wasn't known when the chat was first stored
+	// (the address book syncs after the first messages): look it up again instead of keeping the number forever.
+	if err == nil && existingName != "" && (existingName == jid.User || strings.Trim(existingName, "0123456789") == "") && jid.Server != "g.us" {
+		existingName = ""
+	}
 	if err == nil && existingName != "" {
 		// Chat exists with a name, use that
 		logger.Infof("Using existing chat name for %s: %s", chatJID, existingName)
@@ -1520,6 +1525,12 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 		contact, err := client.Store.Contacts.GetContact(context.Background(), jid)
 		if err == nil && contact.FullName != "" {
 			name = contact.FullName
+		} else if err == nil && contact.FirstName != "" {
+			name = contact.FirstName
+		} else if err == nil && contact.BusinessName != "" {
+			name = contact.BusinessName
+		} else if err == nil && contact.PushName != "" {
+			name = contact.PushName
 		} else if sender != "" {
 			// Fallback to sender
 			name = sender

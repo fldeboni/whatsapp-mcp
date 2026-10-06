@@ -30,5 +30,7 @@ git -C $root log --format='  - %s' "$before..$after"
 
 # Recompila e reinstala sem pedir QR (a sessao continua valendo); o install para o bridge antes de compilar.
 & (Join-Path $root 'install.ps1') -SkipPrereqs -SkipPair
+# Give names to chats stored with just the number (address book syncs after the first messages)
+& (Join-Path $env:LOCALAPPDATA 'whatsapp-mcpenv\Scripts\python.exe') (Join-Path $root 'fix_chat_names.py')
 Write-Host "`nSuba o bridge de novo:" -ForegroundColor Green
 Write-Host '  powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File .\start-bridge.ps1 -Log'
