@@ -24,6 +24,8 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	wastore "go.mau.fi/whatsmeow/store"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -1325,6 +1327,11 @@ func main() {
 			return
 		}
 	}
+
+	// How this device shows up in the phone's "Linked devices" list. Only sent at pairing time
+	// (existing sessions keep their old name/icon until re-paired). Upstream sent UNKNOWN -> "?" icon, "Outro dispositivo".
+	wastore.SetOSInfo("Claude (WhatsApp MCP)", [3]uint32{1, 0, 0})
+	wastore.DeviceProps.PlatformType = waCompanionReg.DeviceProps_DESKTOP.Enum()
 
 	// Create client instance
 	client := whatsmeow.NewClient(deviceStore, logger)
