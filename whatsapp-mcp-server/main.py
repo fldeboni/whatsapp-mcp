@@ -33,7 +33,8 @@ from whatsapp import (
     send_file as whatsapp_send_file,
     send_audio_message as whatsapp_audio_voice_message,
     download_media as whatsapp_download_media,
-    mark_chat_as_read as whatsapp_mark_chat_as_read
+    mark_chat_as_read as whatsapp_mark_chat_as_read,
+    request_chat_history as whatsapp_request_chat_history
 )
 
 # Initialize FastMCP server
@@ -262,6 +263,19 @@ def mark_chats_as_read(chat_jids: List[str]) -> List[Dict[str, Any]]:
         success, status_message = whatsapp_mark_chat_as_read(jid)
         results.append({"chat_jid": jid, "success": success, "message": status_message})
     return results
+
+@mcp.tool()
+def request_chat_history(chat_jid: str, count: int = 50) -> Dict[str, Any]:
+    """Fetch OLDER messages of one chat from the phone (history from before the MCP was connected is incomplete).
+    Asks the phone for up to `count` (max 50) messages older than the oldest one stored; they arrive a few seconds
+    later. Then call list_messages again. Repeat to go further back. The phone must be online.
+
+    Args:
+        chat_jid: The chat JID (e.g. "5527999999999@s.whatsapp.net" or a group "...@g.us")
+        count: How many older messages to request (1-50, default 50)
+    """
+    success, status_message = whatsapp_request_chat_history(chat_jid, count)
+    return {"success": success, "message": status_message}
 
 @mcp.tool()
 def download_media(message_id: str, chat_jid: str) -> Dict[str, Any]:

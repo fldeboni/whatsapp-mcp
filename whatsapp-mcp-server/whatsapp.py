@@ -653,6 +653,16 @@ def send_message(recipient: str, message: str) -> Tuple[bool, str]:
     except Exception as e:
         return False, f"Unexpected error: {str(e)}"
 
+def request_chat_history(chat_jid: str, count: int = 50) -> Tuple[bool, str]:
+    try:
+        response = requests.post(f"{WHATSAPP_API_BASE_URL}/history", json={"chat_jid": chat_jid, "count": count}, timeout=30)
+        result = response.json()
+        return result.get("success", False), result.get("message", f"HTTP {response.status_code}")
+    except requests.RequestException as e:
+        return False, f"Bridge not reachable (is whatsapp-bridge running?): {e}"
+    except ValueError:
+        return False, f"HTTP {response.status_code} - {response.text[:300]}"
+
 def mark_chat_as_read(chat_jid: str) -> Tuple[bool, str]:
     try:
         response = requests.post(f"{WHATSAPP_API_BASE_URL}/markread", json={"chat_jid": chat_jid}, timeout=30)

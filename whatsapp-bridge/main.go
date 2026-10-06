@@ -237,6 +237,74 @@ func extractTextContent(msg *waProto.Message) string {
 	if doc := msg.GetDocumentMessage(); doc != nil {
 		return doc.GetCaption()
 	}
+
+	// Interactive messages (e.g. the "Copiar chave Pix" card): body text + native-flow buttons.
+	if im := msg.GetInteractiveMessage(); im != nil {
+		return extractInteractiveText(im)
+	}
+	return ""
+}
+
+// extractInteractiveText renders an interactive message as text. Native-flow buttons carry their data as JSON
+// (a Pix key card has the key, its type and the merchant name); known Pix fields become a readable line and the
+// raw params are kept (trimmed) so nothing is lost when WhatsApp changes the format.
+func extractInteractiveText(im *waProto.InteractiveMessage) string {
+	var parts []string
+	if t := im.GetHeader().GetTitle(); t != "" {
+		parts = append(parts, t)
+	}
+	if t := im.GetBody().GetText(); t != "" {
+		parts = append(parts, t)
+	}
+	if t := im.GetFooter().GetText(); t != "" {
+		parts = append(parts, t)
+	}
+	for _, b := range im.GetNativeFlowMessage().GetButtons() {
+		raw := b.GetButtonParamsJSON()
+		var params any
+		if json.Unmarshal([]byte(raw), &params) == nil {
+			if pix := findPixKey(params); pix != "" {
+				parts = append(parts, pix)
+			}
+		}
+		if len(raw) > 600 {
+			raw = raw[:600] + "..."
+		}
+		parts = append(parts, fmt.Sprintf("[botão %s] %s", b.GetName(), raw))
+	}
+	return strings.Join(parts, "\n")
+}
+
+// findPixKey walks button params looking for an object with a Pix key ("key" plus "key_type" or a merchant name).
+func findPixKey(v any) string {
+	switch t := v.(type) {
+	case map[string]any:
+		key, _ := t["key"].(string)
+		keyType, _ := t["key_type"].(string)
+		name, _ := t["merchant_name"].(string)
+		if key != "" && (keyType != "" || name != "") {
+			s := "Chave Pix"
+			if keyType != "" {
+				s += " (" + keyType + ")"
+			}
+			s += ": " + key
+			if name != "" {
+				s += " — " + name
+			}
+			return s
+		}
+		for _, child := range t {
+			if s := findPixKey(child); s != "" {
+				return s
+			}
+		}
+	case []any:
+		for _, child := range t {
+			if s := findPixKey(child); s != "" {
+				return s
+			}
+		}
+	}
 	return ""
 }
 
@@ -746,6 +814,36 @@ func senderServerFor(client *whatsmeow.Client, chat types.JID) string {
 	return server
 }
 
+// requestChatHistory asks the phone for up to `count` messages older than the oldest one stored for the chat.
+func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, chatJID string, count int) (bool, string) {
+	chat, err := types.ParseJID(chatJID)
+	if err != nil {
+		return false, fmt.Sprintf("invalid chat JID: %v", err)
+	}
+	var id, senderJID string
+	var ts time.Time
+	var fromMe bool
+	err = messageStore.db.QueryRow(
+		"SELECT id, timestamp, is_from_me, COALESCE(sender_jid, '') FROM messages WHERE chat_jid = ? ORDER BY timestamp ASC LIMIT 1",
+		chatJID).Scan(&id, &ts, &fromMe, &senderJID)
+	if err != nil {
+		return false, "no stored message in this chat to anchor the history request"
+	}
+	info := &types.MessageInfo{
+		MessageSource: types.MessageSource{Chat: chat, IsFromMe: fromMe},
+		ID:            id,
+		Timestamp:     ts,
+	}
+	if senderJID != "" {
+		info.Sender, _ = types.ParseJID(senderJID)
+	}
+	if _, err := client.SendPeerMessage(context.Background(), client.BuildHistorySyncRequest(info, count)); err != nil {
+		return false, fmt.Sprintf("failed to request history: %v", err)
+	}
+	return true, fmt.Sprintf("Requested up to %d messages older than %s from the phone; they arrive in a few seconds (phone must be online)",
+		count, ts.Format("2006-01-02 15:04"))
+}
+
 // unmarkedSince is the cutoff for "incoming messages not yet marked as read": the last mark, at most 3 days back.
 func unmarkedSince(messageStore *MessageStore, chatJID string) time.Time {
 	since := time.Now().Add(-72 * time.Hour)
@@ -1121,6 +1219,32 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		json.NewEncoder(w).Encode(SendMessageResponse{Success: success, Message: message})
+	})
+
+	// Handler for fetching older history of one chat from the phone (on-demand history sync).
+	// The phone answers asynchronously with a HistorySync event, stored by handleHistorySync.
+	http.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ChatJID string `json:"chat_jid"`
+			Count   int    `json:"count"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ChatJID == "" {
+			http.Error(w, "chat_jid is required", http.StatusBadRequest)
+			return
+		}
+		if req.Count <= 0 || req.Count > 50 {
+			req.Count = 50
+		}
+		w.Header().Set("Content-Type", "application/json")
+		ok, msg := requestChatHistory(client, messageStore, req.ChatJID, req.Count)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		json.NewEncoder(w).Encode(SendMessageResponse{Success: ok, Message: msg})
 	})
 
 	// Handler for asking the phone to resend a message that failed to decrypt
