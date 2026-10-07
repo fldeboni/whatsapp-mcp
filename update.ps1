@@ -1,6 +1,6 @@
 # Atualiza o WhatsApp MCP para a versao mais nova do repositorio e recompila.
 # Uso (na pasta do projeto):  powershell -ExecutionPolicy Bypass -File .\update.ps1
-# Sessao, mensagens e configuracoes ficam em %LOCALAPPDATA%\whatsapp-mcp e NAO sao tocadas.
+# Sessao, mensagens e configuracoes ficam em %USERPROFILE%\.whatsapp-mcp e NAO sao tocadas.
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $repo = 'https://github.com/fldeboni/whatsapp-mcp.git'
@@ -11,7 +11,7 @@ if (-not (Test-Path (Join-Path $root '.git'))) {
     Write-Host "  git clone $repo"
     Write-Host '  cd whatsapp-mcp'
     Write-Host '  powershell -ExecutionPolicy Bypass -File .\install.ps1 -SkipPair'
-    Write-Host 'A sessao do WhatsApp continua valendo (fica em %LOCALAPPDATA%), nao precisa escanear o QR de novo.'
+    Write-Host 'A sessao do WhatsApp continua valendo (fica em %USERPROFILE%\.whatsapp-mcp), nao precisa escanear o QR de novo.'
     exit 1
 }
 
@@ -31,6 +31,6 @@ git -C $root log --format='  - %s' "$before..$after"
 # Recompila e reinstala sem pedir QR (a sessao continua valendo); o install para o bridge antes de compilar.
 & (Join-Path $root 'install.ps1') -SkipPrereqs -SkipPair
 # Give names to chats stored with just the number (address book syncs after the first messages)
-& (Join-Path $env:LOCALAPPDATA 'whatsapp-mcp\venv\Scripts\python.exe') (Join-Path $root 'fix_chat_names.py')
+& (Join-Path $env:USERPROFILE '.whatsapp-mcp\venv\Scripts\python.exe') (Join-Path $root 'fix_chat_names.py')
 Write-Host "`nSuba o bridge de novo:" -ForegroundColor Green
 Write-Host '  powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File .\start-bridge.ps1 -Log'

@@ -2,7 +2,7 @@
 Run with the bridge STOPPED. Uses whatsmeow's own LID map (whatsapp.db)."""
 import os, sqlite3
 
-base = os.environ.get('WHATSAPP_STORE_DIR') or os.path.join(os.environ['LOCALAPPDATA'], 'whatsapp-mcp', 'store')
+base = os.environ.get('WHATSAPP_STORE_DIR') or os.path.join(os.path.expanduser('~'), '.whatsapp-mcp', 'store')
 lidmap = dict(sqlite3.connect(os.path.join(base, 'whatsapp.db')).execute('select lid, pn from whatsmeow_lid_map'))
 db = sqlite3.connect(os.path.join(base, 'messages.db'))
 

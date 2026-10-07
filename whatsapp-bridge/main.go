@@ -46,13 +46,15 @@ type Message struct {
 }
 
 // storeDir returns where session keys, messages and media live.
-// Defaults to %LOCALAPPDATA%\whatsapp-mcp\store so nothing ends up in a synced folder (OneDrive).
+// Defaults to %USERPROFILE%\.whatsapp-mcp\store: outside synced folders (OneDrive) and outside AppData, which
+// Windows virtualizes for packaged apps like Claude desktop (files written there by Claude are invisible to
+// Explorer/logon, so a Startup shortcut could not find the bridge).
 func storeDir() string {
 	if dir := os.Getenv("WHATSAPP_STORE_DIR"); dir != "" {
 		return dir
 	}
-	if base, err := os.UserCacheDir(); err == nil {
-		return filepath.Join(base, "whatsapp-mcp", "store")
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".whatsapp-mcp", "store")
 	}
 	return "store"
 }

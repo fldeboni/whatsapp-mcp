@@ -4,7 +4,7 @@ Safe to run with the bridge running; only touches chats whose name is purely dig
 Run: <venv python> fix_chat_names.py"""
 import os, sqlite3
 
-base = os.environ.get('WHATSAPP_STORE_DIR') or os.path.join(os.environ['LOCALAPPDATA'], 'whatsapp-mcp', 'store')
+base = os.environ.get('WHATSAPP_STORE_DIR') or os.path.join(os.path.expanduser('~'), '.whatsapp-mcp', 'store')
 book = sqlite3.connect(f"file:{os.path.join(base, 'whatsapp.db')}?mode=ro", uri=True)
 pn_to_lid = {pn: lid for lid, pn in book.execute('SELECT lid, pn FROM whatsmeow_lid_map')}
 names = {}

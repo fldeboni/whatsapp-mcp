@@ -7,9 +7,10 @@ import requests
 import json
 import audio
 
-# Same location the bridge uses (outside OneDrive): WHATSAPP_STORE_DIR or %LOCALAPPDATA%\whatsapp-mcp\store
+# Same location the bridge uses: WHATSAPP_STORE_DIR or %USERPROFILE%\.whatsapp-mcp\store
+# (not AppData: Windows virtualizes it for packaged apps like Claude desktop; not OneDrive: it syncs)
 STORE_DIR = os.environ.get('WHATSAPP_STORE_DIR') or os.path.join(
-    os.environ.get('LOCALAPPDATA') or os.path.expanduser('~/.cache'), 'whatsapp-mcp', 'store')
+    os.path.expanduser('~'), '.whatsapp-mcp', 'store')
 MESSAGES_DB_PATH = os.path.join(STORE_DIR, 'messages.db')
 WHATSAPP_DB_PATH = os.path.join(STORE_DIR, 'whatsapp.db')  # whatsmeow session store: address book + LID map (read-only use)
 

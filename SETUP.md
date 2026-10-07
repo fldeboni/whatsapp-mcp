@@ -8,10 +8,10 @@ Conecta o WhatsApp **pessoal** ao Claude via whatsmeow (protocolo não oficial �
 | O quê | Onde | Por quê |
 |---|---|---|
 | Código | pasta extraída (pode ser OneDrive) | |
-| Sessão (`whatsapp.db`), mensagens (`messages.db`), mídias | `%LOCALAPPDATA%\whatsapp-mcp\store` | `whatsapp.db` = controle total da conta; não pode ir pra nuvem. SQLite também corrompe em pasta sincronizada |
-| Binário do bridge | `%LOCALAPPDATA%\whatsapp-mcp\bin\whatsapp-bridge.exe` | |
-| venv Python | `%LOCALAPPDATA%\whatsapp-mcp\venv` | |
-| Logs (modo background) | `%LOCALAPPDATA%\whatsapp-mcp\logs` | |
+| Sessão (`whatsapp.db`), mensagens (`messages.db`), mídias | `%USERPROFILE%\.whatsapp-mcp\store` | `whatsapp.db` = controle total da conta; não pode ir pra nuvem. SQLite também corrompe em pasta sincronizada |
+| Binário do bridge | `%USERPROFILE%\.whatsapp-mcp\bin\whatsapp-bridge.exe` | |
+| venv Python | `%USERPROFILE%\.whatsapp-mcp\venv` | |
+| Logs (modo background) | `%USERPROFILE%\.whatsapp-mcp\logs` | |
 
 `WHATSAPP_STORE_DIR` sobrescreve o local da store (bridge e servidor MCP leem a mesma variável).
 
@@ -28,7 +28,7 @@ Conecta o WhatsApp **pessoal** ao Claude via whatsmeow (protocolo não oficial �
 9. **Ferramenta nova `mark_chats_as_read`**: manda read receipts por remetente + "marcar como lida" (o mesmo que o WhatsApp Web faz ao abrir a conversa), com pausas de 4–12 s entre conversas.
 
 10. **Recuperação após hibernar**: mensagens que não descriptografam são pedidas de volta ao celular (`AutomaticMessageRerequestFromPhone`; `/api/rerequest` para falhas antigas); o app state `regular_low` é ressincronizado a cada reconexão. O patch de "marcar como lida" é best-effort — os read receipts sozinhos já limpam o celular.
-11. **Auto mark-read** (`auto-markread.json` em `%LOCALAPPDATA%\whatsapp-mcp`, modelo em `auto-markread.example.json`): goroutine no bridge, intervalo aleatório entre `interval_min_minutes` e `interval_max_minutes`, só dentro de `window_start`–`window_end`, pula grupos sem nada novo. Usa o relógio de parede (os timers monotônicos do Go no Windows não andam durante a hibernação).
+11. **Auto mark-read** (`auto-markread.json` em `%USERPROFILE%\.whatsapp-mcp`, modelo em `auto-markread.example.json`): goroutine no bridge, intervalo aleatório entre `interval_min_minutes` e `interval_max_minutes`, só dentro de `window_start`–`window_end`, pula grupos sem nada novo. Usa o relógio de parede (os timers monotônicos do Go no Windows não andam durante a hibernação).
 
 12. **Busca de contatos na agenda**: `search_contacts` procura nas conversas E na agenda do WhatsApp (`whatsmeow_contacts`, código LID convertido para número), sem diferenciar acentos (`list_chats` também). Conversas gravadas só com o número ganham nome: o bridge tenta de novo a agenda, e `fix_chat_names.py` corrige o banco (rodado pelo `update.ps1`).
 13. **`request_chat_history`**: busca no celular mensagens antigas de uma conversa (até 50 por vez). **Mensagens interativas** (cartão de chave Pix etc.) são gravadas como texto.
@@ -59,14 +59,14 @@ Leitura liberada, envio sempre perguntando — qualquer contato pode mandar text
 - O bridge precisa estar rodando para o Claude receber e enviar mensagens.
 - Subir em segundo plano: `powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File .\start-bridge.ps1 -Log`
 - Para subir sozinho no logon: tarefa agendada (gatilho "Ao fazer logon") ou atalho na pasta Inicializar com o comando acima. Em máquinas corporativas a tarefa agendada pode ser bloqueada por política.
-- Re-parear do zero: parar o bridge, apagar `%LOCALAPPDATA%\whatsapp-mcp\store\whatsapp.db`, rodar `start-bridge.ps1`.
+- Re-parear do zero: parar o bridge, apagar `%USERPROFILE%\.whatsapp-mcp\store\whatsapp.db`, rodar `start-bridge.ps1`.
 - A sessão aparece em "Aparelhos conectados" no celular; dá pra desconectar por lá a qualquer momento.
 
 ## Rebuild manual
 
 ```powershell
 $env:CGO_ENABLED=1   # precisa gcc (winget BrechtSanders.WinLibs.POSIX.UCRT)
-cd whatsapp-bridge; go build -o "$env:LOCALAPPDATA\whatsapp-mcp\bin\whatsapp-bridge.exe" .
-cd ..\whatsapp-mcp-server; $env:UV_PROJECT_ENVIRONMENT="$env:LOCALAPPDATA\whatsapp-mcp\venv"; uv sync
+cd whatsapp-bridge; go build -o "$env:USERPROFILE\.whatsapp-mcp\bin\whatsapp-bridge.exe" .
+cd ..\whatsapp-mcp-server; $env:UV_PROJECT_ENVIRONMENT="$env:USERPROFILE\.whatsapp-mcp\venv"; uv sync
 ```
 Parar o bridge antes do build (o exe fica travado enquanto roda). Ou simplesmente rodar `install.ps1` de novo.

@@ -29,7 +29,7 @@ Você vai instalar o WhatsApp MCP no notebook desta pessoa. Regras:
 - Trabalhe em PowerShell. Fale com a pessoa em português, em linguagem simples, dizendo o que está fazendo.
 - **Verifique cada etapa antes de seguir** (comando de checagem indicado). Se algo falhar, diagnostique; não pule etapa.
 - **Nunca peça nem digite senhas.** Logins (GitHub) são feitos pela própria pessoa no navegador.
-- **Nunca coloque sessão ou mensagens do WhatsApp em pasta sincronizada** (OneDrive, Google Drive, Dropbox). Os dados ficam em `%LOCALAPPDATA%\whatsapp-mcp`; o código pode ficar em qualquer pasta.
+- **Nunca coloque sessão ou mensagens do WhatsApp em pasta sincronizada** (OneDrive, Google Drive, Dropbox). Os dados ficam em `%USERPROFILE%\.whatsapp-mcp`; o código pode ficar em qualquer pasta.
 - **Nunca libere as ferramentas de envio** (`send_message`, `send_file`, `send_audio_message`) para rodar sem confirmação. Qualquer contato pode mandar uma mensagem com "instruções" para o Claude; a confirmação antes de enviar é a proteção.
 - Depois de instalar, o PATH só atualiza em processos novos. Use os caminhos completos ou recarregue o PATH:
   `$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')`
@@ -73,8 +73,8 @@ Na pasta do projeto:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -SkipPair
 ```
-Ele instala o que faltar (Go, uv, gcc, ffmpeg, Python 3.12), compila o bridge em `%LOCALAPPDATA%\whatsapp-mcp\bin`,
-cria o ambiente Python em `%LOCALAPPDATA%\whatsapp-mcp\venv` e registra o MCP `whatsapp` no Claude Code (escopo user) e no Claude Desktop (se existir).
+Ele instala o que faltar (Go, uv, gcc, ffmpeg, Python 3.12), compila o bridge em `%USERPROFILE%\.whatsapp-mcp\bin`,
+cria o ambiente Python em `%USERPROFILE%\.whatsapp-mcp\venv` e registra o MCP `whatsapp` no Claude Code (escopo user) e no Claude Desktop (se existir).
 Pode levar vários minutos; use timeout longo. Se falhar por algo recém-instalado "não encontrado", recarregue o PATH e rode de novo (é seguro repetir).
 
 Problemas já conhecidos:
@@ -103,7 +103,7 @@ Confira o pareamento:
 ```
 e, depois de 1–2 minutos, que as conversas estão chegando:
 ```powershell
-& "$env:LOCALAPPDATA\whatsapp-mcp\venv\Scripts\python.exe" -c "import sqlite3,os; c=sqlite3.connect(os.path.expandvars(r'%LOCALAPPDATA%\whatsapp-mcp\store\messages.db')); print(c.execute('select count(*) from chats').fetchone()[0], 'conversas')"
+& "$env:USERPROFILE\.whatsapp-mcp\venv\Scripts\python.exe" -c "import sqlite3,os; c=sqlite3.connect(os.path.expandvars(r'%USERPROFILE%\.whatsapp-mcp\store\messages.db')); print(c.execute('select count(*) from chats').fetchone()[0], 'conversas')"
 ```
 
 ### Etapa 7 — Permissões no Claude Code
@@ -135,13 +135,13 @@ Hibernar não derruba; **reiniciar o notebook sim**. Ofereça subir sozinho no l
 
 O recurso vem **desligado** (sem o arquivo de configuração, nada é marcado). **Não ative por conta própria nem sugira grupos sem a pessoa pedir**:
 só pergunte se ela quer. Se quiser, ela escolhe os grupos (mostre com `list_chats` ou pelo banco `messages.db` e confirme a lista final com ela), e você cria
-`%LOCALAPPDATA%\whatsapp-mcp\auto-markread.json` a partir de `auto-markread.example.json`. O bridge marca esses grupos a cada 30–60 min (aleatório), só entre 07:00 e 22:00, com pausas de humano. Mudanças valem no ciclo seguinte, sem reiniciar.
+`%USERPROFILE%\.whatsapp-mcp\auto-markread.json` a partir de `auto-markread.example.json`. O bridge marca esses grupos a cada 30–60 min (aleatório), só entre 07:00 e 22:00, com pausas de humano. Mudanças valem no ciclo seguinte, sem reiniciar.
 
 ### Etapa 10 — Teste final e entrega
 
 1. Peça para a pessoa abrir uma **conversa nova** no Claude (o MCP só aparece em sessões novas) e testar: *"liste minhas 5 conversas mais recentes do WhatsApp"*.
 2. Explique, em poucas linhas:
-   - onde ficam os dados (`%LOCALAPPDATA%\whatsapp-mcp`) e que nada vai para nuvem além do WhatsApp e do Claude quando ela pergunta algo;
+   - onde ficam os dados (`%USERPROFILE%\.whatsapp-mcp`) e que nada vai para nuvem além do WhatsApp e do Claude quando ela pergunta algo;
    - que envio de mensagem sempre pede confirmação — e que ela deve **ler destinatário e texto antes de aprovar**;
    - **risco de ban**: é o mesmo protocolo do WhatsApp Web, uso normal é tranquilo; evitar disparo em massa ou para muitos números novos;
    - como desconectar: celular → Aparelhos conectados → remover;

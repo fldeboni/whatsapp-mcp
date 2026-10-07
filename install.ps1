@@ -3,14 +3,16 @@
 #
 # O que faz:
 #   1. Instala pre-requisitos via winget (Go, uv, gcc/WinLibs, ffmpeg; Python 3.12 se nao houver >= 3.11)
-#   2. Compila o bridge em %LOCALAPPDATA%\whatsapp-mcp\bin
-#   3. Cria o ambiente Python em %LOCALAPPDATA%\whatsapp-mcp\venv
+#   2. Compila o bridge em %USERPROFILE%\.whatsapp-mcp\bin
+#   3. Cria o ambiente Python em %USERPROFILE%\.whatsapp-mcp\venv
 #   4. Registra o MCP "whatsapp" no Claude Code e/ou Claude Desktop
 #   5. Abre a janela do bridge para escanear o QR code
 #
-# Sessao, mensagens e midias ficam em %LOCALAPPDATA%\whatsapp-mcp\store (nunca na pasta do codigo).
+# Sessao, mensagens e midias ficam em %USERPROFILE%\.whatsapp-mcp\store (nunca na pasta do codigo).
+# Nao usar AppData: o Windows virtualiza AppData para apps empacotados (Claude desktop), e o que o Claude grava
+# la fica invisivel para o Explorer e os atalhos de logon.
 param(
-    [string]$DataDir = (Join-Path $env:LOCALAPPDATA 'whatsapp-mcp'),
+    [string]$DataDir = (Join-Path $env:USERPROFILE '.whatsapp-mcp'),
     [switch]$SkipPrereqs,
     [switch]$SkipRegister,
     [switch]$SkipPair
@@ -18,6 +20,23 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $DataDir = [IO.Path]::GetFullPath($DataDir)
+
+# Migrate installs from the old location (%LOCALAPPDATA%\whatsapp-mcp). When this runs from Claude desktop, that path
+# is the app's private virtualized copy, which is exactly where the old installer put everything. Keeps the WhatsApp
+# session (no new QR), messages and auto-markread.json. Bridge must be stopped (done here) so the DBs aren't in use.
+$oldDir = Join-Path $env:LOCALAPPDATA 'whatsapp-mcp'
+if ((Test-Path (Join-Path $oldDir 'store\whatsapp.db')) -and -not (Test-Path (Join-Path $DataDir 'store\whatsapp.db'))) {
+    Write-Host "`n==> Migrando dados de $oldDir para $DataDir" -ForegroundColor Cyan
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match '-File\s+"?[^"]*start-bridge\.ps1' -and $_.ProcessId -ne $PID } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+    Get-Process whatsapp-bridge -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 2
+    New-Item -ItemType Directory -Force $DataDir | Out-Null
+    foreach ($item in 'store', 'logs', 'auto-markread.json') {
+        $src = Join-Path $oldDir $item
+        if (Test-Path $src) { Copy-Item $src (Join-Path $DataDir $item) -Recurse -Force }
+    }
+    Write-Host "    sessao, mensagens e configuracao copiadas (a pasta antiga foi mantida como backup)"
+}
 
 function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Refresh-Path {

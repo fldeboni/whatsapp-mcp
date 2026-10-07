@@ -1,7 +1,7 @@
 # WhatsApp no Claude — instalação
 
 Liga o seu WhatsApp ao Claude (Claude Code ou Claude Desktop) no seu próprio notebook Windows.
-Tudo roda local: suas conversas ficam em `%LOCALAPPDATA%\whatsapp-mcp` e não vão para nenhum servidor além do próprio WhatsApp e do Claude quando você pergunta algo.
+Tudo roda local: suas conversas ficam em `%USERPROFILE%\.whatsapp-mcp` e não vão para nenhum servidor além do próprio WhatsApp e do Claude quando você pergunta algo.
 
 ## Instalar (uns 10 minutos)
 
@@ -49,7 +49,7 @@ Se você instalou por um zip antigo, o `update.ps1` explica como migrar para o r
 
 ## Marcar grupos como lidos automaticamente (opcional)
 
-Copie `auto-markread.example.json` para `%LOCALAPPDATA%\whatsapp-mcp\auto-markread.json` e coloque os grupos em `chats`
+Copie `auto-markread.example.json` para `%USERPROFILE%\.whatsapp-mcp\auto-markread.json` e coloque os grupos em `chats`
 (ou peça ao Claude: *"configure o auto-markread com meus grupos de promoção"*). O bridge marca esses grupos como lidos
 a cada 30–60 min (aleatório), só entre 07:00 e 22:00, com pausas de humano entre um grupo e outro. Edições no arquivo valem no ciclo seguinte.
 
