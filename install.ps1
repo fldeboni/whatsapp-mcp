@@ -13,6 +13,7 @@
 # la fica invisivel para o Explorer e os atalhos de logon.
 param(
     [string]$DataDir = (Join-Path $env:USERPROFILE '.whatsapp-mcp'),
+    [string]$OldDataDir = (Join-Path $env:LOCALAPPDATA 'whatsapp-mcp'),
     [switch]$SkipPrereqs,
     [switch]$SkipRegister,
     [switch]$SkipPair
@@ -24,7 +25,7 @@ $DataDir = [IO.Path]::GetFullPath($DataDir)
 # Migrate installs from the old location (%LOCALAPPDATA%\whatsapp-mcp). When this runs from Claude desktop, that path
 # is the app's private virtualized copy, which is exactly where the old installer put everything. Keeps the WhatsApp
 # session (no new QR), messages and auto-markread.json. Bridge must be stopped (done here) so the DBs aren't in use.
-$oldDir = Join-Path $env:LOCALAPPDATA 'whatsapp-mcp'
+$oldDir = $OldDataDir
 if ((Test-Path (Join-Path $oldDir 'store\whatsapp.db')) -and -not (Test-Path (Join-Path $DataDir 'store\whatsapp.db'))) {
     Write-Host "`n==> Migrando dados de $oldDir para $DataDir" -ForegroundColor Cyan
     Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match '-File\s+"?[^"]*start-bridge\.ps1' -and $_.ProcessId -ne $PID } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
@@ -35,7 +36,13 @@ if ((Test-Path (Join-Path $oldDir 'store\whatsapp.db')) -and -not (Test-Path (Jo
         $src = Join-Path $oldDir $item
         if (Test-Path $src) { Copy-Item $src (Join-Path $DataDir $item) -Recurse -Force }
     }
-    Write-Host "    sessao, mensagens e configuracao copiadas (a pasta antiga foi mantida como backup)"
+    # Claude conversations opened before the migration keep an MCP server that reads <old>\store. Replace that folder
+    # with a junction to the new store so they see live data without opening a new conversation.
+    $oldStore = Join-Path $oldDir 'store'
+    $backup = "store.antes-migracao-$(Get-Date -Format yyyyMMdd)"
+    Rename-Item $oldStore $backup
+    cmd /c mklink /J "$oldStore" "$(Join-Path $DataDir 'store')" | Out-Null
+    Write-Host "    sessao, mensagens e configuracao copiadas; $oldStore agora aponta para a pasta nova (backup: $backup)"
 }
 
 function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
