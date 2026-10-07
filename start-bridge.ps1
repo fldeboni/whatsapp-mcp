@@ -12,6 +12,10 @@ $env:WHATSAPP_STORE_DIR = Join-Path $DataDir 'store'
 
 # Uma instancia so: duas sessoes com a mesma chave derrubam uma a outra.
 if (Get-Process whatsapp-bridge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }) { Write-Host 'Bridge ja esta rodando.'; exit 0 }
+# Also bail out if another background loop (-Log) is alive: it may just be in its 30s wait before restarting the bridge.
+$otherLoop = Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*start-bridge.ps1*-Log*' }
+if ($otherLoop) { Write-Host 'Bridge ja esta rodando (reiniciando em segundo plano).'; exit 0 }
 
 Set-Location $DataDir
 if ($Log) {
