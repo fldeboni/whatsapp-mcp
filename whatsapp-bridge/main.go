@@ -24,10 +24,10 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
-	"go.mau.fi/whatsmeow/proto/waCompanionReg"
-	wastore "go.mau.fi/whatsmeow/store"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	wastore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -848,6 +848,46 @@ func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, ch
 		count, ts.Format("2006-01-02 15:04"))
 }
 
+// storeGroup inserts a group chat or refreshes its name, never touching last_message_time of an existing row.
+func storeGroup(messageStore *MessageStore, jid, name string, ts time.Time, logger waLog.Logger) {
+	if name == "" {
+		return
+	}
+	res, err := messageStore.db.Exec(
+		`INSERT INTO chats (jid, name, last_message_time) VALUES (?, ?, ?)
+		 ON CONFLICT(jid) DO UPDATE SET name = excluded.name WHERE chats.name IS NOT excluded.name`,
+		jid, name, ts)
+	if err != nil {
+		logger.Warnf("Failed to store group %s: %v", jid, err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		logger.Infof("Group stored/renamed: %s (%s)", name, jid)
+	}
+}
+
+func groupTime(g *types.GroupInfo) time.Time {
+	if !g.GroupCreated.IsZero() {
+		return g.GroupCreated
+	}
+	if !g.NameSetAt.IsZero() {
+		return g.NameSetAt
+	}
+	return time.Now()
+}
+
+func syncJoinedGroups(client *whatsmeow.Client, messageStore *MessageStore, logger waLog.Logger) {
+	groups, err := client.GetJoinedGroups(context.Background())
+	if err != nil {
+		logger.Warnf("Failed to list joined groups: %v", err)
+		return
+	}
+	for _, g := range groups {
+		storeGroup(messageStore, g.JID.String(), g.Name, groupTime(g), logger)
+	}
+	logger.Infof("Joined groups synced: %d", len(groups))
+}
+
 // unmarkedSince is the cutoff for "incoming messages not yet marked as read": the last mark, at most 3 days back.
 func unmarkedSince(messageStore *MessageStore, chatJID string) time.Time {
 	since := time.Now().Add(-72 * time.Hour)
@@ -1375,6 +1415,18 @@ func main() {
 					logger.Infof("App state regular_low resynced")
 				}
 			}()
+			// Chats only got a row when a message arrived, so groups without messages (e.g. just created) were
+			// invisible to the MCP. Register every joined group and refresh renamed ones on each (re)connect.
+			go syncJoinedGroups(client, messageStore, logger)
+
+		case *events.JoinedGroup:
+			// Group created by/with you: register it now, it may not get a message for a while.
+			storeGroup(messageStore, v.JID.String(), v.Name, groupTime(&v.GroupInfo), logger)
+
+		case *events.GroupInfo:
+			if v.Name != nil && v.Name.Name != "" {
+				storeGroup(messageStore, v.JID.String(), v.Name.Name, v.Timestamp, logger)
+			}
 
 		case *events.LoggedOut:
 			logger.Warnf("Device logged out, please scan QR code to log in again")
