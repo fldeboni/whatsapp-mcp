@@ -862,6 +862,49 @@ func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, ch
 		count, ts.Format("2006-01-02 15:04"))
 }
 
+// messageAuthor returns who wrote a stored message, as WhatsApp expects it in message keys (reactions, edits):
+// our own JID for our messages, the sender's JID otherwise (rebuilt from the group's addressing mode for old rows).
+func messageAuthor(client *whatsmeow.Client, messageStore *MessageStore, chat types.JID, messageID string) (types.JID, error) {
+	var sender, senderJID string
+	var fromMe bool
+	err := messageStore.db.QueryRow(
+		"SELECT COALESCE(sender,''), COALESCE(sender_jid,''), is_from_me FROM messages WHERE id = ? AND chat_jid = ?",
+		messageID, chat.String()).Scan(&sender, &senderJID, &fromMe)
+	if err != nil {
+		return types.JID{}, fmt.Errorf("message %s not found in chat %s", messageID, chat.String())
+	}
+	switch {
+	case fromMe:
+		return client.Store.ID.ToNonAD(), nil
+	case senderJID != "":
+		j, err := types.ParseJID(senderJID)
+		return j.ToNonAD(), err
+	case chat.Server == types.GroupServer && sender != "":
+		return types.NewJID(strings.Split(sender, "@")[0], senderServerFor(client, chat)), nil
+	default:
+		return chat, nil // direct chat: the other party
+	}
+}
+
+// sendReaction reacts to a stored message with an emoji; an empty emoji removes our reaction.
+func sendReaction(client *whatsmeow.Client, messageStore *MessageStore, chatJID, messageID, emoji string) (bool, string) {
+	chat, err := types.ParseJID(chatJID)
+	if err != nil {
+		return false, fmt.Sprintf("invalid chat JID: %v", err)
+	}
+	author, err := messageAuthor(client, messageStore, chat, messageID)
+	if err != nil {
+		return false, err.Error()
+	}
+	if _, err := client.SendMessage(context.Background(), chat, client.BuildReaction(chat, author, messageID, emoji)); err != nil {
+		return false, fmt.Sprintf("failed to send reaction: %v", err)
+	}
+	if emoji == "" {
+		return true, fmt.Sprintf("Reaction removed from %s", messageID)
+	}
+	return true, fmt.Sprintf("Reacted %s to %s", emoji, messageID)
+}
+
 // buildReplyContext quotes a stored message (WhatsApp "reply"): the recipient sees the quoted bubble above the text.
 func buildReplyContext(client *whatsmeow.Client, messageStore *MessageStore, recipient, messageID string) (*waProto.ContextInfo, error) {
 	chatJID := recipient
@@ -1364,6 +1407,29 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		json.NewEncoder(w).Encode(SendMessageResponse{Success: success, Message: message})
+	})
+
+	// Handler for reacting to a message with an emoji ("" removes the reaction)
+	http.HandleFunc("/api/react", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ChatJID   string `json:"chat_jid"`
+			MessageID string `json:"message_id"`
+			Emoji     string `json:"emoji"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ChatJID == "" || req.MessageID == "" {
+			http.Error(w, "chat_jid and message_id are required", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		ok, msg := sendReaction(client, messageStore, req.ChatJID, req.MessageID, req.Emoji)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		json.NewEncoder(w).Encode(SendMessageResponse{Success: ok, Message: msg})
 	})
 
 	// Handler for fetching older history of one chat from the phone (on-demand history sync).

@@ -34,7 +34,8 @@ from whatsapp import (
     send_audio_message as whatsapp_audio_voice_message,
     download_media as whatsapp_download_media,
     mark_chat_as_read as whatsapp_mark_chat_as_read,
-    request_chat_history as whatsapp_request_chat_history
+    request_chat_history as whatsapp_request_chat_history,
+    send_reaction as whatsapp_send_reaction
 )
 
 # Initialize FastMCP server
@@ -268,6 +269,19 @@ def mark_chats_as_read(chat_jids: List[str]) -> List[Dict[str, Any]]:
         success, status_message = whatsapp_mark_chat_as_read(jid)
         results.append({"chat_jid": jid, "success": success, "message": status_message})
     return results
+
+@mcp.tool()
+def send_reaction(chat_jid: str, message_id: str, emoji: str) -> Dict[str, Any]:
+    """React to a WhatsApp message with an emoji (visible to everyone in the chat). Use an empty string to remove
+    your reaction. Get the message ID from list_messages ("Message ID: ...").
+
+    Args:
+        chat_jid: The chat JID the message belongs to (person "...@s.whatsapp.net" or group "...@g.us")
+        message_id: The ID of the message to react to
+        emoji: A single emoji, e.g. "👍", "❤️", "😂", "🙏"; "" removes the reaction
+    """
+    success, status_message = whatsapp_send_reaction(chat_jid, message_id, emoji)
+    return {"success": success, "message": status_message}
 
 @mcp.tool()
 def request_chat_history(chat_jid: str, count: int = 50) -> Dict[str, Any]:
