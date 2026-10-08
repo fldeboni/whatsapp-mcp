@@ -324,10 +324,11 @@ type SendMessageRequest struct {
 	Recipient string `json:"recipient"`
 	Message   string `json:"message"`
 	MediaPath string `json:"media_path,omitempty"`
+	ReplyTo   string `json:"reply_to,omitempty"` // message ID to quote (reply), must be stored in this chat
 }
 
 // Function to send a WhatsApp message
-func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string) (bool, string) {
+func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string, reply *waProto.ContextInfo) (bool, string) {
 	if !client.IsConnected() {
 		return false, "Not connected to WhatsApp"
 	}
@@ -489,12 +490,17 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				FileLength:    &resp.FileLength,
 			}
 		}
-	} else if text, mentioned := buildMentions(client, recipientJID, message); len(mentioned) > 0 {
+	} else if text, mentioned := buildMentions(client, recipientJID, message); len(mentioned) > 0 || reply != nil {
 		// "@<phone>" in a group only becomes a real mention (name highlighted, person notified) when the
-		// message carries the mentioned JIDs; plain text just shows the number.
+		// message carries the mentioned JIDs; plain text just shows the number. A reply carries the quoted message.
+		ctxInfo := reply
+		if ctxInfo == nil {
+			ctxInfo = &waProto.ContextInfo{}
+		}
+		ctxInfo.MentionedJID = mentioned
 		msg.ExtendedTextMessage = &waProto.ExtendedTextMessage{
 			Text:        proto.String(text),
-			ContextInfo: &waProto.ContextInfo{MentionedJID: mentioned},
+			ContextInfo: ctxInfo,
 		}
 	} else {
 		msg.Conversation = proto.String(message)
@@ -856,6 +862,55 @@ func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, ch
 		count, ts.Format("2006-01-02 15:04"))
 }
 
+// buildReplyContext quotes a stored message (WhatsApp "reply"): the recipient sees the quoted bubble above the text.
+func buildReplyContext(client *whatsmeow.Client, messageStore *MessageStore, recipient, messageID string) (*waProto.ContextInfo, error) {
+	chatJID := recipient
+	if !strings.Contains(chatJID, "@") {
+		chatJID += "@" + types.DefaultUserServer
+	}
+	chat, err := types.ParseJID(chatJID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid recipient: %v", err)
+	}
+	var content, mediaType, filename, senderJID string
+	var fromMe bool
+	err = messageStore.db.QueryRow(
+		`SELECT COALESCE(content,''), COALESCE(media_type,''), COALESCE(filename,''), COALESCE(sender_jid,''), is_from_me
+		 FROM messages WHERE id = ? AND chat_jid = ?`, messageID, chat.String()).Scan(&content, &mediaType, &filename, &senderJID, &fromMe)
+	if err != nil {
+		return nil, fmt.Errorf("reply_to %s not found in chat %s", messageID, chat.String())
+	}
+	// Who wrote the quoted message: needed in groups so WhatsApp can render/jump to it.
+	var participant types.JID
+	if fromMe {
+		participant = client.Store.ID.ToNonAD()
+		if chat.Server == types.GroupServer && senderServerFor(client, chat) == types.HiddenUserServer {
+			participant = client.Store.GetLID().ToNonAD()
+		}
+	} else if senderJID != "" {
+		participant, _ = types.ParseJID(senderJID)
+		participant = participant.ToNonAD()
+	}
+	quoted := &waProto.Message{}
+	switch mediaType {
+	case "document":
+		quoted.DocumentMessage = &waProto.DocumentMessage{FileName: proto.String(filename), Title: proto.String(filename), Caption: proto.String(content)}
+	case "image":
+		quoted.ImageMessage = &waProto.ImageMessage{Caption: proto.String(content)}
+	case "video":
+		quoted.VideoMessage = &waProto.VideoMessage{Caption: proto.String(content)}
+	case "audio":
+		quoted.AudioMessage = &waProto.AudioMessage{}
+	default:
+		quoted.Conversation = proto.String(content)
+	}
+	ctxInfo := &waProto.ContextInfo{StanzaID: proto.String(messageID), QuotedMessage: quoted}
+	if !participant.IsEmpty() {
+		ctxInfo.Participant = proto.String(participant.String())
+	}
+	return ctxInfo, nil
+}
+
 var mentionPattern = regexp.MustCompile(`@(\d{8,15})\b`)
 
 // buildMentions turns "@<phone>" tokens of a group message into real mentions. Groups addressed by LID need the
@@ -1210,7 +1265,17 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 		fmt.Println("Received request to send message", req.Message, req.MediaPath)
 
 		// Send the message
-		success, message := sendWhatsAppMessage(client, req.Recipient, req.Message, req.MediaPath)
+		var reply *waProto.ContextInfo
+		if req.ReplyTo != "" {
+			var err error
+			if reply, err = buildReplyContext(client, messageStore, req.Recipient, req.ReplyTo); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(SendMessageResponse{Success: false, Message: err.Error()})
+				return
+			}
+		}
+		success, message := sendWhatsAppMessage(client, req.Recipient, req.Message, req.MediaPath, reply)
 		fmt.Println("Message sent", success, message)
 		// Set response headers
 		w.Header().Set("Content-Type", "application/json")
