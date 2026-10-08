@@ -745,7 +745,9 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 		return false, "", "", "", fmt.Errorf("not a media message")
 	}
 
-	// Create directory for the chat if it doesn't exist
+	// One folder per message: the "already downloaded" shortcut below must only reuse THIS message's file.
+	// Keyed by filename alone, a corrected file re-sent with the same name returned the old copy.
+	chatDir = filepath.Join(chatDir, safeFilename(messageID))
 	if err := os.MkdirAll(chatDir, 0755); err != nil {
 		return false, "", "", "", fmt.Errorf("failed to create chat directory: %v", err)
 	}
