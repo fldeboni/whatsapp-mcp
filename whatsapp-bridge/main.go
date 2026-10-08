@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -488,6 +489,13 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				FileLength:    &resp.FileLength,
 			}
 		}
+	} else if text, mentioned := buildMentions(client, recipientJID, message); len(mentioned) > 0 {
+		// "@<phone>" in a group only becomes a real mention (name highlighted, person notified) when the
+		// message carries the mentioned JIDs; plain text just shows the number.
+		msg.ExtendedTextMessage = &waProto.ExtendedTextMessage{
+			Text:        proto.String(text),
+			ContextInfo: &waProto.ContextInfo{MentionedJID: mentioned},
+		}
 	} else {
 		msg.Conversation = proto.String(message)
 	}
@@ -846,6 +854,34 @@ func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, ch
 	}
 	return true, fmt.Sprintf("Requested up to %d messages older than %s from the phone; they arrive in a few seconds (phone must be online)",
 		count, ts.Format("2006-01-02 15:04"))
+}
+
+var mentionPattern = regexp.MustCompile(`@(\d{8,15})\b`)
+
+// buildMentions turns "@<phone>" tokens of a group message into real mentions. Groups addressed by LID need the
+// mention (and the "@..." in the text) to use the participant's LID, otherwise WhatsApp shows the raw number.
+func buildMentions(client *whatsmeow.Client, chat types.JID, text string) (string, []string) {
+	if chat.Server != types.GroupServer {
+		return text, nil
+	}
+	useLID := senderServerFor(client, chat) == types.HiddenUserServer
+	var mentioned []string
+	seen := map[string]bool{}
+	out := mentionPattern.ReplaceAllStringFunc(text, func(tok string) string {
+		pn := types.NewJID(tok[1:], types.DefaultUserServer)
+		target := pn
+		if useLID {
+			if lid, err := client.Store.LIDs.GetLIDForPN(context.Background(), pn); err == nil && !lid.IsEmpty() {
+				target = lid.ToNonAD()
+			}
+		}
+		if !seen[target.String()] {
+			seen[target.String()] = true
+			mentioned = append(mentioned, target.String())
+		}
+		return "@" + target.User
+	})
+	return out, mentioned
 }
 
 // storeGroup inserts a group chat or refreshes its name, never touching last_message_time of an existing row.

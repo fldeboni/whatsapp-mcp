@@ -186,7 +186,9 @@ def send_message(
     Args:
         recipient: The recipient - either a phone number with country code but no + or other symbols,
                  or a JID (e.g., "123456789@s.whatsapp.net" or a group JID like "123456789@g.us")
-        message: The message text to send
+        message: The message text to send. To MENTION someone in a group, write "@" + their phone number with
+                 country code (e.g. "@5527999999999") in the text: it becomes a real mention (name highlighted,
+                 person notified). Do not write "@Name".
     
     Returns:
         A dictionary containing success status and a status message
