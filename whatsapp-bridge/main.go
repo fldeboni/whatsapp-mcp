@@ -883,14 +883,23 @@ func saveContact(client *whatsmeow.Client, messageStore *MessageStore, phone, fu
 	if len(resp) == 0 || !resp[0].IsIn {
 		return false, fmt.Sprintf("%s is not on WhatsApp", phone)
 	}
-	pn := resp[0].JID.ToNonAD()
+	// Contacts are keyed by the PHONE-number JID; the LID goes in its own field. IsOnWhatsApp may answer with the
+	// LID, so never use its JID as the key (the phone wouldn't attach the name to the number).
+	pn := types.NewJID(phone, types.DefaultUserServer)
+	lid := types.JID{}
+	if resp[0].JID.Server == types.HiddenUserServer {
+		lid = resp[0].JID.ToNonAD()
+	} else if l, err := client.Store.LIDs.GetLIDForPN(ctx, pn); err == nil {
+		lid = l.ToNonAD()
+	}
 	action := &waSyncAction.ContactAction{
 		FullName:                 proto.String(fullName),
 		FirstName:                proto.String(firstName),
+		PnJID:                    proto.String(pn.String()),
 		SaveOnPrimaryAddressbook: proto.Bool(saveOnPhone),
 	}
-	if lid, err := client.Store.LIDs.GetLIDForPN(ctx, pn); err == nil && !lid.IsEmpty() {
-		action.LidJID = proto.String(lid.ToNonAD().String())
+	if !lid.IsEmpty() {
+		action.LidJID = proto.String(lid.String())
 	}
 	patch := appstate.PatchInfo{
 		Type: appstate.WAPatchCriticalUnblockLow, // the contact list collection
