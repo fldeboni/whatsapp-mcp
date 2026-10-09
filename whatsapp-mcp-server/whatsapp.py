@@ -65,48 +65,40 @@ class MessageContext:
     after: List[Message]
 
 def get_sender_name(sender_jid: str) -> str:
+    """Display name for a sender (bare number, LID or JID). Only DIRECT chats and the address book are used:
+    the old "jid LIKE %number%" also matched groups created by that person (their ID starts with the creator's
+    number), so messages showed up as sent by a group name."""
+    user = sender_jid.split('@')[0].split(':')[0]
     try:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
-        cursor = conn.cursor()
-        
-        # First try matching by exact JID
-        cursor.execute("""
-            SELECT name
-            FROM chats
-            WHERE jid = ?
-            LIMIT 1
-        """, (sender_jid,))
-        
-        result = cursor.fetchone()
-        
-        # If no result, try looking for the number within JIDs
-        if not result:
-            # Extract the phone number part if it's a JID
-            if '@' in sender_jid:
-                phone_part = sender_jid.split('@')[0]
-            else:
-                phone_part = sender_jid
-                
-            cursor.execute("""
-                SELECT name
-                FROM chats
-                WHERE jid LIKE ?
-                LIMIT 1
-            """, (f"%{phone_part}%",))
-            
-            result = cursor.fetchone()
-        
-        if result and result[0]:
-            return result[0]
-        else:
-            return sender_jid
-        
+        try:
+            row = conn.execute("SELECT name FROM chats WHERE jid IN (?, ?, ?) AND name IS NOT NULL AND name != '' LIMIT 1",
+                               (sender_jid, f'{user}@s.whatsapp.net', f'{user}@lid')).fetchone()
+        finally:
+            conn.close()
+        if row and not row[0].isdigit():
+            return row[0]
     except sqlite3.Error as e:
         print(f"Database error while getting sender name: {e}")
-        return sender_jid
-    finally:
-        if 'conn' in locals():
-            conn.close()
+    try:
+        book = sqlite3.connect(f'file:{WHATSAPP_DB_PATH}?mode=ro', uri=True)
+        try:
+            users = [user]
+            pn = book.execute('SELECT pn FROM whatsmeow_lid_map WHERE lid = ?', (user,)).fetchone()
+            lid = book.execute('SELECT lid FROM whatsmeow_lid_map WHERE pn = ?', (user,)).fetchone()
+            # phone-number entry first: it carries the name saved in the address book (LID entries only the profile name)
+            users = ([pn[0]] if pn else []) + users + ([lid[0]] if lid else [])
+            for u in users:
+                row = book.execute("""SELECT COALESCE(NULLIF(full_name,''), NULLIF(first_name,''), NULLIF(business_name,''),
+                                             NULLIF(push_name,'')) FROM whatsmeow_contacts
+                                      WHERE their_jid LIKE ? OR their_jid LIKE ? LIMIT 1""", (f'{u}@%', f'{u}:%')).fetchone()
+                if row and row[0]:
+                    return row[0]
+        finally:
+            book.close()
+    except sqlite3.Error as e:
+        print(f"Address book error while getting sender name: {e}")
+    return sender_jid
 
 def format_message(message: Message, show_chat_info: bool = True) -> None:
     """Print a single message with consistent formatting."""
