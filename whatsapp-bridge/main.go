@@ -913,7 +913,11 @@ func saveContact(client *whatsmeow.Client, messageStore *MessageStore, phone, fu
 		return false, fmt.Sprintf("failed to save contact: %v", err)
 	}
 	// Reflect it locally right away (search_contacts / chat names) without waiting for the app-state echo.
-	client.Store.Contacts.PutContactName(ctx, pn, fullName, firstName) // signature: (jid, fullName, firstName)
+	// sqlstore implements PutContactName(jid, firstName, fullName) (the interface's parameter names are swapped).
+	client.Store.Contacts.PutContactName(ctx, pn, firstName, fullName)
+	if !lid.IsEmpty() {
+		client.Store.Contacts.PutContactName(ctx, lid, firstName, fullName)
+	}
 	messageStore.db.Exec("UPDATE chats SET name = ? WHERE jid = ?", fullName, pn.String())
 	return true, fmt.Sprintf("Contact saved: %s (%s)", fullName, pn.User)
 }
