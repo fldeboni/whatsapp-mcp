@@ -35,7 +35,8 @@ from whatsapp import (
     download_media as whatsapp_download_media,
     mark_chat_as_read as whatsapp_mark_chat_as_read,
     request_chat_history as whatsapp_request_chat_history,
-    send_reaction as whatsapp_send_reaction
+    send_reaction as whatsapp_send_reaction,
+    save_contact as whatsapp_save_contact
 )
 
 # Initialize FastMCP server
@@ -269,6 +270,20 @@ def mark_chats_as_read(chat_jids: List[str]) -> List[Dict[str, Any]]:
         success, status_message = whatsapp_mark_chat_as_read(jid)
         results.append({"chat_jid": jid, "success": success, "message": status_message})
     return results
+
+@mcp.tool()
+def save_contact(phone: str, full_name: str, first_name: str = "", save_on_phone: bool = True) -> Dict[str, Any]:
+    """Create or update a WhatsApp contact (same as "New contact"/"Edit contact" in WhatsApp; synced to all devices).
+    Saving again with the same phone updates the name. The number must be on WhatsApp.
+
+    Args:
+        phone: Phone number with country code, digits only (e.g. "5527999999999")
+        full_name: Name to save (e.g. "Maria Silva (Fornecedor X)")
+        first_name: Optional first name; defaults to the first word of full_name
+        save_on_phone: Also save in the phone's own address book (default True)
+    """
+    success, status_message = whatsapp_save_contact(phone, full_name, first_name, save_on_phone)
+    return {"success": success, "message": status_message}
 
 @mcp.tool()
 def send_reaction(chat_jid: str, message_id: str, emoji: str) -> Dict[str, Any]:

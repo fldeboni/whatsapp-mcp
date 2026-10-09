@@ -669,6 +669,17 @@ def send_message(recipient: str, message: str, reply_to: Optional[str] = None) -
     except Exception as e:
         return False, f"Unexpected error: {str(e)}"
 
+def save_contact(phone: str, full_name: str, first_name: str = "", save_on_phone: bool = True) -> Tuple[bool, str]:
+    try:
+        response = requests.post(f"{WHATSAPP_API_BASE_URL}/contact", json={
+            "phone": phone, "full_name": full_name, "first_name": first_name, "save_on_phone": save_on_phone}, timeout=60)
+        result = response.json()
+        return result.get("success", False), result.get("message", f"HTTP {response.status_code}")
+    except requests.RequestException as e:
+        return False, f"Bridge not reachable (is whatsapp-bridge running?): {e}"
+    except ValueError:
+        return False, f"HTTP {response.status_code} - {response.text[:300]}"
+
 def send_reaction(chat_jid: str, message_id: str, emoji: str) -> Tuple[bool, str]:
     try:
         response = requests.post(f"{WHATSAPP_API_BASE_URL}/react",

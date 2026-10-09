@@ -28,6 +28,7 @@ import (
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	wastore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
@@ -864,6 +865,50 @@ func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, ch
 		count, ts.Format("2006-01-02 15:04"))
 }
 
+// saveContact creates or updates a WhatsApp contact (the "contact" app-state action WhatsApp Web/app use since 2024,
+// synced to all devices; saveOnPhone also asks the phone to save it in its own address book).
+func saveContact(client *whatsmeow.Client, messageStore *MessageStore, phone, fullName, firstName string, saveOnPhone bool) (bool, string) {
+	ctx := context.Background()
+	phone = strings.TrimLeft(strings.TrimSpace(phone), "+")
+	if phone == "" || strings.Trim(phone, "0123456789") != "" || fullName == "" {
+		return false, "phone (digits with country code) and full_name are required"
+	}
+	if firstName == "" {
+		firstName = strings.Fields(fullName)[0]
+	}
+	resp, err := client.IsOnWhatsApp(ctx, []string{"+" + phone})
+	if err != nil {
+		return false, fmt.Sprintf("failed to check number: %v", err)
+	}
+	if len(resp) == 0 || !resp[0].IsIn {
+		return false, fmt.Sprintf("%s is not on WhatsApp", phone)
+	}
+	pn := resp[0].JID.ToNonAD()
+	action := &waSyncAction.ContactAction{
+		FullName:                 proto.String(fullName),
+		FirstName:                proto.String(firstName),
+		SaveOnPrimaryAddressbook: proto.Bool(saveOnPhone),
+	}
+	if lid, err := client.Store.LIDs.GetLIDForPN(ctx, pn); err == nil && !lid.IsEmpty() {
+		action.LidJID = proto.String(lid.ToNonAD().String())
+	}
+	patch := appstate.PatchInfo{
+		Type: appstate.WAPatchCriticalUnblockLow, // the contact list collection
+		Mutations: []appstate.MutationInfo{{
+			Index:   []string{appstate.IndexContact, pn.String()},
+			Version: 2,
+			Value:   &waSyncAction.SyncActionValue{ContactAction: action},
+		}},
+	}
+	if err := client.SendAppState(ctx, patch); err != nil {
+		return false, fmt.Sprintf("failed to save contact: %v", err)
+	}
+	// Reflect it locally right away (search_contacts / chat names) without waiting for the app-state echo.
+	client.Store.Contacts.PutContactName(ctx, pn, fullName, firstName) // signature: (jid, fullName, firstName)
+	messageStore.db.Exec("UPDATE chats SET name = ? WHERE jid = ?", fullName, pn.String())
+	return true, fmt.Sprintf("Contact saved: %s (%s)", fullName, pn.User)
+}
+
 // messageAuthor returns who wrote a stored message, as WhatsApp expects it in message keys (reactions, edits):
 // our own JID for our messages, the sender's JID otherwise (rebuilt from the group's addressing mode for old rows).
 func messageAuthor(client *whatsmeow.Client, messageStore *MessageStore, chat types.JID, messageID string) (types.JID, error) {
@@ -1409,6 +1454,31 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		json.NewEncoder(w).Encode(SendMessageResponse{Success: success, Message: message})
+	})
+
+	// Handler for creating/updating a contact
+	http.HandleFunc("/api/contact", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Phone       string `json:"phone"`
+			FullName    string `json:"full_name"`
+			FirstName   string `json:"first_name"`
+			SaveOnPhone *bool  `json:"save_on_phone"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		saveOnPhone := req.SaveOnPhone == nil || *req.SaveOnPhone
+		w.Header().Set("Content-Type", "application/json")
+		ok, msg := saveContact(client, messageStore, req.Phone, req.FullName, req.FirstName, saveOnPhone)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		json.NewEncoder(w).Encode(SendMessageResponse{Success: ok, Message: msg})
 	})
 
 	// Handler for reacting to a message with an emoji ("" removes the reaction)
