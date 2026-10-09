@@ -124,12 +124,13 @@ Se a pessoa usa o Claude Desktop (chat), ele já pede confirmação por ferramen
 
 ### Etapa 8 — Deixar rodando
 
-O bridge precisa estar no ar para o Claude ler e enviar. Troque a janela do QR pelo modo em segundo plano:
-feche a janela do pareamento e rode
-```powershell
-Start-Process powershell -WindowStyle Hidden -WorkingDirectory "<pasta do projeto>" -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','.\start-bridge.ps1','-Log'
-```
-Hibernar não derruba; **reiniciar o notebook sim**. Ofereça subir sozinho no logon (atalho na pasta Inicializar com o comando acima, ou tarefa agendada "Ao fazer logon"). Pergunte antes de criar. Em máquina corporativa a tarefa agendada pode ser bloqueada por política (sai com código 1 sem rodar nada) — aí use o atalho ou deixe manual.
+O instalador criou o atalho **"WhatsApp MCP Bridge"** na área de trabalho e na pasta Inicializar (sobe sozinho a cada logon).
+Depois do pareamento, peça para a pessoa **fechar a janela do QR** e **dar duplo clique no atalho da área de trabalho**
+(ele roda escondido; clicar de novo com o bridge no ar não faz nada).
+
+**Não suba o bridge você mesmo** (Start-Process etc.): processos abertos pelo Claude desktop morrem quando a conversa ou o app
+fecha, e o WhatsApp para de funcionar sem ninguém perceber. Confira que subiu: porta 8080 em `127.0.0.1` e o registro
+`%USERPROFILE%\.whatsapp-mcp\logs\start-bridge-launches.log` com "loop iniciado".
 
 ### Etapa 9 — Opcional: marcar grupos como lidos automaticamente
 

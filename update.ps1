@@ -32,5 +32,6 @@ git -C $root log --format='  - %s' "$before..$after"
 & (Join-Path $root 'install.ps1') -SkipPrereqs -SkipPair
 # Give names to chats stored with just the number (address book syncs after the first messages)
 & (Join-Path $env:USERPROFILE '.whatsapp-mcp\venv\Scripts\python.exe') (Join-Path $root 'fix_chat_names.py')
-Write-Host "`nSuba o bridge de novo:" -ForegroundColor Green
-Write-Host '  powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File .\start-bridge.ps1 -Log'
+# install.ps1 stopped the bridge and (re)created the shortcuts; it must be restarted by the user, not by Claude.
+Write-Host "`nAtualizado. Agora: (1) duplo clique no atalho 'WhatsApp MCP Bridge' da area de trabalho;" -ForegroundColor Green
+Write-Host "(2) abra uma conversa NOVA no Claude (as abertas continuam com a versao antiga)." -ForegroundColor Green

@@ -16,7 +16,8 @@ param(
     [string]$OldDataDir = (Join-Path $env:LOCALAPPDATA 'whatsapp-mcp'),
     [switch]$SkipPrereqs,
     [switch]$SkipRegister,
-    [switch]$SkipPair
+    [switch]$SkipPair,
+    [switch]$SkipShortcuts
 )
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -147,11 +148,33 @@ if (-not $SkipRegister) {
     }
 }
 
-# 5. Pareamento ---------------------------------------------------------------
+# 5. Atalhos "WhatsApp MCP Bridge" (area de trabalho + Inicializar) -----------
+# The bridge must be started by Windows (Explorer/logon), not by Claude: processes started from Claude desktop
+# die when the conversation/app closes. The Startup shortcut also brings it back after a reboot.
+if (-not $SkipShortcuts) {
+    Step 'Criando atalhos "WhatsApp MCP Bridge" (area de trabalho e Inicializar)'
+    $wsh = New-Object -ComObject WScript.Shell
+    foreach ($dir in [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Startup')) {
+        $lnk = $wsh.CreateShortcut((Join-Path $dir 'WhatsApp MCP Bridge.lnk'))
+        $lnk.TargetPath = 'powershell.exe'
+        $lnk.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$(Join-Path $root 'start-bridge.ps1')`" -Log"
+        $lnk.WorkingDirectory = $DataDir
+        $lnk.WindowStyle = 7
+        $lnk.Description = 'Mantem o WhatsApp MCP (bridge) conectado'
+        $lnk.Save()
+    }
+    Write-Host '    ok (duplo clique nao faz nada se o bridge ja estiver rodando)'
+}
+
+# 6. Pareamento ---------------------------------------------------------------
 if (-not $SkipPair) {
     Step 'Abrindo o bridge: escaneie o QR code (WhatsApp > Aparelhos conectados > Conectar aparelho)'
     Start-Process powershell -WorkingDirectory $root -ArgumentList '-NoProfile', '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $root 'start-bridge.ps1')
+    Write-Host "`nDepois de escanear e aparecer 'Connected', FECHE essa janela e de duplo clique no atalho" -ForegroundColor Yellow
+    Write-Host '"WhatsApp MCP Bridge" na area de trabalho (ele roda escondido e nao cai quando o Claude fecha).' -ForegroundColor Yellow
+} else {
+    Write-Host "`nSuba o bridge com duplo clique no atalho 'WhatsApp MCP Bridge' da area de trabalho." -ForegroundColor Yellow
 }
 
-Write-Host "`nPronto. Depois de parear, abra uma conversa NOVA no Claude e peca, por exemplo:" -ForegroundColor Green
+Write-Host "`nPronto. Abra uma conversa NOVA no Claude e peca, por exemplo:" -ForegroundColor Green
 Write-Host '  "liste minhas conversas mais recentes do WhatsApp"'
