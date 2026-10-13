@@ -588,6 +588,24 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 	// Display sender by phone number (resolves to contact names); sender_jid keeps the real JID for receipts.
 	sender := normalizeChat(client, msg.Info.Sender).User
 
+	// An edit arrives as a new message (ProtocolMessage MESSAGE_EDIT) pointing at the original ID; apply the new
+	// text to the stored original instead of dropping it (it has no content of its own).
+	if pm := msg.Message.GetProtocolMessage(); pm != nil && pm.GetType() == waProto.ProtocolMessage_MESSAGE_EDIT {
+		origID := pm.GetKey().GetID()
+		newText := extractTextContent(pm.GetEditedMessage())
+		if origID != "" && newText != "" {
+			res, err := messageStore.db.Exec("UPDATE messages SET content = ? WHERE id = ? AND chat_jid = ?", newText, origID, chatJID)
+			if err != nil {
+				logger.Warnf("Failed to apply edit to %s: %v", origID, err)
+			} else if n, _ := res.RowsAffected(); n > 0 {
+				logger.Infof("Message %s edited in %s", origID, chatJID)
+			} else {
+				logger.Infof("Edit for unknown message %s in %s (original not stored)", origID, chatJID)
+			}
+		}
+		return
+	}
+
 	// Get appropriate chat name (pass nil for conversation since we don't have one for regular messages)
 	name := GetChatName(client, messageStore, msg.Info.Chat, chatJID, nil, sender, logger)
 
