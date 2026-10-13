@@ -100,6 +100,30 @@ def get_sender_name(sender_jid: str) -> str:
         print(f"Address book error while getting sender name: {e}")
     return sender_jid
 
+def _edit_delete_marks(message_id: str, chat_jid: str) -> str:
+    """Flags kept by the bridge: a deleted message keeps its content (so you know what was said AND that it was
+    deleted); an edited one keeps its first text in original_content."""
+    try:
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        try:
+            row = conn.execute('SELECT deleted_at, edited_at, original_content FROM messages WHERE id = ? AND chat_jid = ?',
+                               (message_id, chat_jid)).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return ''  # old database without the columns
+    if not row:
+        return ''
+    deleted_at, edited_at, original = row
+    marks = ''
+    if deleted_at:
+        marks += f'[APAGADA PELO REMETENTE em {str(deleted_at)[:16]}] '
+    if edited_at:
+        orig = (original or '').replace('\n', ' / ')
+        marks += f'[EDITADA em {str(edited_at)[:16]} | original: "{orig[:300]}"] '
+    return marks
+
+
 def format_message(message: Message, show_chat_info: bool = True) -> None:
     """Print a single message with consistent formatting."""
     output = ""
@@ -115,6 +139,7 @@ def format_message(message: Message, show_chat_info: bool = True) -> None:
     else:
         content_prefix = f"[Message ID: {message.id}] "
     
+    content_prefix += _edit_delete_marks(message.id, message.chat_jid)
     try:
         sender_name = get_sender_name(message.sender) if not message.is_from_me else "Me"
         output += f"From: {sender_name}: {content_prefix}{message.content}\n"

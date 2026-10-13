@@ -136,6 +136,11 @@ func NewMessageStore() (*MessageStore, error) {
 	// Full sender JID (user@lid / user@s.whatsapp.net): `sender` only keeps the user part,
 	// which is not enough to send read receipts. Ignore the error when the column already exists.
 	db.Exec(`ALTER TABLE messages ADD COLUMN sender_jid TEXT`)
+	// Edits/deletes never lose information: the first text is kept in original_content, a "delete for everyone"
+	// only sets deleted_at (content stays, so you can still see what was said and decide what to do).
+	db.Exec(`ALTER TABLE messages ADD COLUMN original_content TEXT`)
+	db.Exec(`ALTER TABLE messages ADD COLUMN edited_at TIMESTAMP`)
+	db.Exec(`ALTER TABLE messages ADD COLUMN deleted_at TIMESTAMP`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS read_marks (chat_jid TEXT PRIMARY KEY, marked_until TIMESTAMP)`)
 
 	return &MessageStore{db: db}, nil
@@ -164,9 +169,19 @@ func (store *MessageStore) StoreMessage(id, chatJID, sender, senderJID, content 
 	}
 
 	_, err := store.db.Exec(
-		`INSERT OR REPLACE INTO messages
+		// Upsert, not INSERT OR REPLACE: a re-delivered message (history sync, re-request) must not wipe the
+		// edit/delete flags nor put the pre-edit text back.
+		`INSERT INTO messages
 		(id, chat_jid, sender, sender_jid, content, timestamp, is_from_me, media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id, chat_jid) DO UPDATE SET
+			sender = excluded.sender,
+			sender_jid = COALESCE(NULLIF(excluded.sender_jid, ''), messages.sender_jid),
+			content = CASE WHEN messages.edited_at IS NULL THEN excluded.content ELSE messages.content END,
+			timestamp = excluded.timestamp, is_from_me = excluded.is_from_me,
+			media_type = excluded.media_type, filename = excluded.filename, url = excluded.url,
+			media_key = excluded.media_key, file_sha256 = excluded.file_sha256,
+			file_enc_sha256 = excluded.file_enc_sha256, file_length = excluded.file_length`,
 		id, chatJID, sender, senderJID, content, timestamp, isFromMe, mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength,
 	)
 	return err
@@ -594,13 +609,30 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 		origID := pm.GetKey().GetID()
 		newText := extractTextContent(pm.GetEditedMessage())
 		if origID != "" && newText != "" {
-			res, err := messageStore.db.Exec("UPDATE messages SET content = ? WHERE id = ? AND chat_jid = ?", newText, origID, chatJID)
+			res, err := messageStore.db.Exec(
+				`UPDATE messages SET original_content = COALESCE(original_content, content), content = ?, edited_at = ?
+				 WHERE id = ? AND chat_jid = ?`, newText, msg.Info.Timestamp, origID, chatJID)
 			if err != nil {
 				logger.Warnf("Failed to apply edit to %s: %v", origID, err)
 			} else if n, _ := res.RowsAffected(); n > 0 {
 				logger.Infof("Message %s edited in %s", origID, chatJID)
 			} else {
 				logger.Infof("Edit for unknown message %s in %s (original not stored)", origID, chatJID)
+			}
+		}
+		return
+	}
+
+	// "Delete for everyone" (sender or group admin): keep the content, just flag it as deleted.
+	if pm := msg.Message.GetProtocolMessage(); pm != nil && pm.GetType() == waProto.ProtocolMessage_REVOKE {
+		origID := pm.GetKey().GetID()
+		if origID != "" {
+			res, err := messageStore.db.Exec("UPDATE messages SET deleted_at = ? WHERE id = ? AND chat_jid = ? AND deleted_at IS NULL",
+				msg.Info.Timestamp, origID, chatJID)
+			if err != nil {
+				logger.Warnf("Failed to flag deleted message %s: %v", origID, err)
+			} else if n, _ := res.RowsAffected(); n > 0 {
+				logger.Infof("Message %s deleted by sender in %s (content kept)", origID, chatJID)
 			}
 		}
 		return

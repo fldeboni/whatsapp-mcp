@@ -9,13 +9,20 @@ db.executescript("""
 CREATE TABLE chats (jid TEXT PRIMARY KEY, name TEXT, last_message_time TIMESTAMP);
 CREATE TABLE messages (id TEXT, chat_jid TEXT, sender TEXT, sender_jid TEXT, content TEXT, timestamp TIMESTAMP,
   is_from_me BOOLEAN, media_type TEXT, filename TEXT, url TEXT, media_key BLOB, file_sha256 BLOB,
-  file_enc_sha256 BLOB, file_length INTEGER, PRIMARY KEY (id, chat_jid));
+  file_enc_sha256 BLOB, file_length INTEGER, original_content TEXT, edited_at TIMESTAMP, deleted_at TIMESTAMP,
+  PRIMARY KEY (id, chat_jid));
 INSERT INTO chats VALUES ('5500000000001@s.whatsapp.net', 'Fulano Teste', '2026-01-01 10:00:00-03:00');
 INSERT INTO chats VALUES ('120363000000000001@g.us', 'Grupo Teste', '2026-01-01 11:00:00-03:00');
 INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me)
   VALUES ('MSG1', '5500000000001@s.whatsapp.net', '5500000000001', 'oi', '2026-01-01 10:00:00-03:00', 0);
 INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me)
   VALUES ('MSG2', '120363000000000001@g.us', '5500000000001', 'promo', '2026-01-01 11:00:00-03:00', 0);
+""")
+db.executescript("""
+INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me, deleted_at)
+  VALUES ('MSGDEL', '5500000000001@s.whatsapp.net', '5500000000001', 'mensagem apagada', '2026-01-01 10:01:00-03:00', 0, '2026-01-01 10:02:00-03:00');
+INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me, edited_at, original_content)
+  VALUES ('MSGEDT', '5500000000001@s.whatsapp.net', '5500000000001', 'texto novo', '2026-01-01 10:03:00-03:00', 0, '2026-01-01 10:04:00-03:00', 'texto velho');
 """)
 db.commit()
 
@@ -61,6 +68,14 @@ async def run():
     else:
         failed += 1
         print(f'FAIL search_contacts agenda: {text[:200]}')
+    # Deleted/edited messages keep their content and show it with a mark
+    res = await main.mcp.call_tool('list_messages', {'chat_jid': '5500000000001@s.whatsapp.net', 'limit': 10, 'include_context': False})
+    text = ' '.join(getattr(b, 'text', '') for b in (res[0] if isinstance(res, tuple) else res))
+    if '[APAGADA PELO REMETENTE' in text and 'mensagem apagada' in text and 'original: "texto velho"' in text and 'texto novo' in text:
+        print('ok   list_messages (apagada/editada com conteudo original)')
+    else:
+        failed += 1
+        print(f'FAIL marcas apagada/editada: {text[:300]}')
     return failed
 
 sys.exit(1 if asyncio.run(run()) else 0)
