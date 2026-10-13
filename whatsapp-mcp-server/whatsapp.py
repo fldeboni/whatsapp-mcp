@@ -711,7 +711,7 @@ def mark_chat_as_read(chat_jid: str) -> Tuple[bool, str]:
     except requests.RequestException as e:
         return False, f"Request error: {str(e)}"
 
-def send_file(recipient: str, media_path: str) -> Tuple[bool, str]:
+def send_file(recipient: str, media_path: str, caption: str = "", reply_to: Optional[str] = None) -> Tuple[bool, str]:
     try:
         # Validate input
         if not recipient:
@@ -726,8 +726,11 @@ def send_file(recipient: str, media_path: str) -> Tuple[bool, str]:
         url = f"{WHATSAPP_API_BASE_URL}/send"
         payload = {
             "recipient": recipient,
-            "media_path": media_path
+            "media_path": media_path,
+            "message": caption or "",
         }
+        if reply_to:
+            payload["reply_to"] = reply_to
         
         response = requests.post(url, json=payload)
         

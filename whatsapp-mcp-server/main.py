@@ -213,20 +213,23 @@ def send_message(
     }
 
 @mcp.tool()
-def send_file(recipient: str, media_path: str) -> Dict[str, Any]:
+def send_file(recipient: str, media_path: str, caption: str = "", reply_to: Optional[str] = None) -> Dict[str, Any]:
     """Send a file such as a picture, raw audio, video or document via WhatsApp to the specified recipient. For group messages use the JID.
     
     Args:
         recipient: The recipient - either a phone number with country code but no + or other symbols,
                  or a JID (e.g., "123456789@s.whatsapp.net" or a group JID like "123456789@g.us")
         media_path: The absolute path to the media file to send (image, video, document)
+        caption: Optional text shown with the image/video/document (the "legenda"). Mentions work like in
+                 send_message: "@" + phone with country code (e.g. "@5527999999999") in a group.
+        reply_to: Optional message ID to reply to (quoted above), from list_messages.
     
     Returns:
         A dictionary containing success status and a status message
     """
     
     # Call the whatsapp_send_file function
-    success, status_message = whatsapp_send_file(recipient, media_path)
+    success, status_message = whatsapp_send_file(recipient, media_path, caption, reply_to)
     return {
         "success": success,
         "message": status_message

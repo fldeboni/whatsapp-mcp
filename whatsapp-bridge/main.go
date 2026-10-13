@@ -422,11 +422,23 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 
 		fmt.Println("Media uploaded", resp)
 
+		// Captions get the same treatment as text: "@<phone>" becomes a real mention, reply_to quotes a message.
+		caption, mentioned := buildMentions(client, recipientJID, message)
+		var mediaCtx *waProto.ContextInfo
+		if len(mentioned) > 0 || reply != nil {
+			mediaCtx = reply
+			if mediaCtx == nil {
+				mediaCtx = &waProto.ContextInfo{}
+			}
+			mediaCtx.MentionedJID = mentioned
+		}
+
 		// Create the appropriate message type based on media type
 		switch mediaType {
 		case whatsmeow.MediaImage:
 			msg.ImageMessage = &waProto.ImageMessage{
-				Caption:       proto.String(message),
+				Caption:       proto.String(caption),
+				ContextInfo:   mediaCtx,
 				Mimetype:      proto.String(mimeType),
 				URL:           &resp.URL,
 				DirectPath:    &resp.DirectPath,
@@ -467,7 +479,8 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 			}
 		case whatsmeow.MediaVideo:
 			msg.VideoMessage = &waProto.VideoMessage{
-				Caption:       proto.String(message),
+				Caption:       proto.String(caption),
+				ContextInfo:   mediaCtx,
 				Mimetype:      proto.String(mimeType),
 				URL:           &resp.URL,
 				DirectPath:    &resp.DirectPath,
@@ -481,7 +494,8 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 			msg.DocumentMessage = &waProto.DocumentMessage{
 				Title:         proto.String(filepath.Base(mediaPath)),
 				FileName:      proto.String(filepath.Base(mediaPath)),
-				Caption:       proto.String(message),
+				Caption:       proto.String(caption),
+				ContextInfo:   mediaCtx,
 				Mimetype:      proto.String(mimeType),
 				URL:           &resp.URL,
 				DirectPath:    &resp.DirectPath,
