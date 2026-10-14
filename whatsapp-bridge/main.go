@@ -145,6 +145,9 @@ func NewMessageStore() (*MessageStore, error) {
 	db.Exec(`ALTER TABLE messages ADD COLUMN edited_at TIMESTAMP`)
 	db.Exec(`ALTER TABLE messages ADD COLUMN deleted_at TIMESTAMP`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS read_marks (chat_jid TEXT PRIMARY KEY, marked_until TIMESTAMP)`)
+	// Delivery/read/played receipts for messages WE sent, one row per recipient (groups have many)
+	db.Exec(`CREATE TABLE IF NOT EXISTS message_receipts (message_id TEXT, chat_jid TEXT, recipient TEXT,
+		delivered_at TIMESTAMP, read_at TIMESTAMP, played_at TIMESTAMP, PRIMARY KEY (message_id, chat_jid, recipient))`)
 
 	return &MessageStore{db: db}, nil
 }
@@ -597,6 +600,32 @@ func normalizeChat(client *whatsmeow.Client, jid types.JID) types.JID {
 		return pn.ToNonAD()
 	}
 	return jid
+}
+
+// handleReceipt records when someone else's device got / read / played a message we sent. Read receipts only
+// come if both sides have them on (WhatsApp privacy setting), so "delivered but not read" may mean "read, hidden".
+func handleReceipt(client *whatsmeow.Client, messageStore *MessageStore, v *events.Receipt) {
+	if v.IsFromMe {
+		return // our own devices
+	}
+	col := ""
+	switch v.Type {
+	case types.ReceiptTypeDelivered:
+		col = "delivered_at"
+	case types.ReceiptTypeRead:
+		col = "read_at"
+	case types.ReceiptTypePlayed:
+		col = "played_at"
+	default:
+		return
+	}
+	chat := normalizeChat(client, v.Chat).String()
+	recipient := normalizeChat(client, v.Sender.ToNonAD()).User
+	for _, id := range v.MessageIDs {
+		messageStore.db.Exec(`INSERT INTO message_receipts (message_id, chat_jid, recipient, `+col+`) VALUES (?, ?, ?, ?)
+			ON CONFLICT(message_id, chat_jid, recipient) DO UPDATE SET `+col+` = COALESCE(message_receipts.`+col+`, excluded.`+col+`)`,
+			id, chat, recipient, v.Timestamp)
+	}
 }
 
 func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *events.Message, logger waLog.Logger) {
@@ -1948,6 +1977,9 @@ func main() {
 
 		case *events.MediaRetry:
 			handleMediaRetry(v)
+
+		case *events.Receipt:
+			handleReceipt(client, messageStore, v)
 
 		case *events.HistorySync:
 			// Process history sync events

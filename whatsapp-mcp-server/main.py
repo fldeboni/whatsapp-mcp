@@ -37,6 +37,7 @@ from whatsapp import (
     request_chat_history as whatsapp_request_chat_history,
     backfill_chat_history as whatsapp_backfill_chat_history,
     backfill_status as whatsapp_backfill_status,
+    message_status as whatsapp_message_status,
     send_reaction as whatsapp_send_reaction,
     save_contact as whatsapp_save_contact
 )
@@ -316,6 +317,18 @@ def request_chat_history(chat_jid: str, count: int = 50) -> Dict[str, Any]:
     """
     success, status_message = whatsapp_request_chat_history(chat_jid, count)
     return {"success": success, "message": status_message}
+
+@mcp.tool()
+def get_message_status(chat_jid: str, message_id: str) -> Dict[str, Any]:
+    """Was a message I sent delivered / read? Per recipient (groups list each member that confirmed), with times.
+    list_messages already shows a short mark on my own messages ([LIDA em ...], [ENTREGUE em ..., não lida],
+    [entregue a N, lida por M]). Read receipts only exist if the recipient has them on.
+
+    Args:
+        chat_jid: The chat JID
+        message_id: The ID of a message sent by me
+    """
+    return whatsapp_message_status(chat_jid, message_id)
 
 @mcp.tool()
 def backfill_chat_history(chat_jid: str, since: Optional[str] = None) -> Dict[str, Any]:

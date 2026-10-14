@@ -124,6 +124,48 @@ def _edit_delete_marks(message_id: str, chat_jid: str) -> str:
     return marks
 
 
+def _receipts(message_id: str, chat_jid: str) -> list:
+    try:
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        try:
+            return conn.execute('SELECT recipient, delivered_at, read_at, played_at FROM message_receipts '
+                                'WHERE message_id = ? AND chat_jid = ? ORDER BY recipient', (message_id, chat_jid)).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []  # bridge older than the receipts table
+
+
+def _receipt_mark(message_id: str, chat_jid: str) -> str:
+    """Status of a message WE sent, like WhatsApp's ticks. Nothing when there is no receipt yet (or the message
+    is older than receipt tracking) - absence is not proof of non-delivery."""
+    rows = _receipts(message_id, chat_jid)
+    if not rows:
+        return ''
+    delivered = sum(1 for _, d, r, p in rows if d or r or p)
+    read = sum(1 for _, _, r, p in rows if r or p)
+    if chat_jid.endswith('@g.us'):
+        return f'[entregue a {delivered}, lida por {read}] '
+    _, d, r, p = rows[0]
+    if p:
+        return f'[OUVIDA/VISTA em {str(p)[:16]}] '
+    if r:
+        return f'[LIDA em {str(r)[:16]}] '
+    return f'[ENTREGUE em {str(d)[:16]}, não lida] '
+
+
+def message_status(chat_jid: str, message_id: str) -> dict:
+    rows = _receipts(message_id, chat_jid)
+    fmt = lambda t: str(t)[:19] if t else None
+    return {
+        'message_id': message_id, 'chat_jid': chat_jid,
+        'recipients': [{'phone': who, 'name': get_sender_name(who), 'delivered_at': fmt(d or r or p), 'read_at': fmt(r or p),
+                        'played_at': fmt(p)} for who, d, r, p in rows],
+        'note': 'Sem linha para alguém = ainda não entregue no aparelho dele (ou mensagem anterior a 14/10/2026, quando o '
+                'registro começou). "Entregue e não lida" pode ser lida com confirmação de leitura desligada.',
+    }
+
+
 def format_message(message: Message, show_chat_info: bool = True) -> None:
     """Print a single message with consistent formatting."""
     output = ""
@@ -140,6 +182,8 @@ def format_message(message: Message, show_chat_info: bool = True) -> None:
         content_prefix = f"[Message ID: {message.id}] "
     
     content_prefix += _edit_delete_marks(message.id, message.chat_jid)
+    if message.is_from_me:
+        content_prefix += _receipt_mark(message.id, message.chat_jid)
     try:
         sender_name = get_sender_name(message.sender) if not message.is_from_me else "Me"
         output += f"From: {sender_name}: {content_prefix}{message.content}\n"

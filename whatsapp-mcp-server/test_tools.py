@@ -24,6 +24,13 @@ INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me, dele
 INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me, edited_at, original_content)
   VALUES ('MSGEDT', '5500000000001@s.whatsapp.net', '5500000000001', 'texto novo', '2026-01-01 10:03:00-03:00', 0, '2026-01-01 10:04:00-03:00', 'texto velho');
 """)
+db.executescript("""
+CREATE TABLE message_receipts (message_id TEXT, chat_jid TEXT, recipient TEXT, delivered_at TIMESTAMP, read_at TIMESTAMP,
+  played_at TIMESTAMP, PRIMARY KEY (message_id, chat_jid, recipient));
+INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me)
+  VALUES ('MSGME', '5500000000001@s.whatsapp.net', 'me', 'minha mensagem', '2026-01-01 10:05:00-03:00', 1);
+INSERT INTO message_receipts VALUES ('MSGME', '5500000000001@s.whatsapp.net', '5500000000001', '2026-01-01 10:05:01-03:00', '2026-01-01 10:06:00-03:00', NULL);
+""")
 db.commit()
 
 # Address book (whatsmeow session store): a contact with no synced chat, stored under a LID with a device suffix
@@ -76,6 +83,16 @@ async def run():
     else:
         failed += 1
         print(f'FAIL marcas apagada/editada: {text[:300]}')
+    # Receipts of my own messages: mark in list_messages + per-recipient tool
+    res = await main.mcp.call_tool('list_messages', {'chat_jid': '5500000000001@s.whatsapp.net', 'limit': 10, 'include_context': False})
+    text = ' '.join(getattr(b, 'text', '') for b in (res[0] if isinstance(res, tuple) else res))
+    res2 = await main.mcp.call_tool('get_message_status', {'chat_jid': '5500000000001@s.whatsapp.net', 'message_id': 'MSGME'})
+    text2 = ' '.join(getattr(b, 'text', '') for b in (res2[0] if isinstance(res2, tuple) else res2))
+    if '[LIDA em 2026-01-01 10:06' in text and '2026-01-01 10:06:00' in text2:
+        print('ok   recibos (lida/entregue)')
+    else:
+        failed += 1
+        print(f'FAIL recibos: {text[:200]} | {text2[:200]}')
     return failed
 
 sys.exit(1 if asyncio.run(run()) else 0)
