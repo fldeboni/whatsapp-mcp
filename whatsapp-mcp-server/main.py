@@ -304,7 +304,8 @@ def send_reaction(chat_jid: str, message_id: str, emoji: str) -> Dict[str, Any]:
 @mcp.tool()
 def request_chat_history(chat_jid: str, count: int = 50) -> Dict[str, Any]:
     """Fetch OLDER messages of one chat from the phone (history from before the MCP was connected is incomplete).
-    Asks the phone for up to `count` (max 50) messages older than the oldest one stored; they arrive a few seconds
+    Asks the phone for up to `count` (max 50) messages older than the oldest one stored (or the latest ones,
+    if the chat has nothing stored yet); they arrive a few seconds
     later. Then call list_messages again. Repeat to go further back. The phone must be online.
 
     Args:

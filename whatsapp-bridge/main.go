@@ -911,8 +911,12 @@ func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, ch
 	err = messageStore.db.QueryRow(
 		"SELECT id, timestamp, is_from_me, COALESCE(sender_jid, '') FROM messages WHERE chat_jid = ? ORDER BY timestamp ASC LIMIT 1",
 		chatJID).Scan(&id, &ts, &fromMe, &senderJID)
-	if err != nil {
-		return false, "no stored message in this chat to anchor the history request"
+	if err == sql.ErrNoRows {
+		// Nothing stored yet (e.g. a group that only came in via GetJoinedGroups): anchor at "now" with no ID so
+		// the phone sends the most recent messages; the next request then anchors on the oldest of those.
+		id, ts, fromMe, senderJID = "", time.Now(), false, ""
+	} else if err != nil {
+		return false, fmt.Sprintf("failed to read oldest message: %v", err)
 	}
 	info := &types.MessageInfo{
 		MessageSource: types.MessageSource{Chat: chat, IsFromMe: fromMe},
