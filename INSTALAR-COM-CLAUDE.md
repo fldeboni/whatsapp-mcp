@@ -115,7 +115,8 @@ Edite `%USERPROFILE%\.claude\settings.json` **mesclando** (não apague o que já
     "mcp__whatsapp__search_contacts", "mcp__whatsapp__list_messages", "mcp__whatsapp__list_chats",
     "mcp__whatsapp__get_chat", "mcp__whatsapp__get_direct_chat_by_contact", "mcp__whatsapp__get_contact_chats",
     "mcp__whatsapp__get_last_interaction", "mcp__whatsapp__get_message_context", "mcp__whatsapp__download_media",
-    "mcp__whatsapp__mark_chats_as_read", "mcp__whatsapp__request_chat_history"
+    "mcp__whatsapp__mark_chats_as_read", "mcp__whatsapp__request_chat_history",
+    "mcp__whatsapp__backfill_chat_history", "mcp__whatsapp__backfill_status"
   ],
   "ask": ["mcp__whatsapp__send_message", "mcp__whatsapp__send_file", "mcp__whatsapp__send_audio_message", "mcp__whatsapp__send_reaction", "mcp__whatsapp__save_contact"]
 }

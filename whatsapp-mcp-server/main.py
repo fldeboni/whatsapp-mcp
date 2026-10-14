@@ -35,6 +35,8 @@ from whatsapp import (
     download_media as whatsapp_download_media,
     mark_chat_as_read as whatsapp_mark_chat_as_read,
     request_chat_history as whatsapp_request_chat_history,
+    backfill_chat_history as whatsapp_backfill_chat_history,
+    backfill_status as whatsapp_backfill_status,
     send_reaction as whatsapp_send_reaction,
     save_contact as whatsapp_save_contact
 )
@@ -314,6 +316,28 @@ def request_chat_history(chat_jid: str, count: int = 50) -> Dict[str, Any]:
     """
     success, status_message = whatsapp_request_chat_history(chat_jid, count)
     return {"success": success, "message": status_message}
+
+@mcp.tool()
+def backfill_chat_history(chat_jid: str, since: Optional[str] = None) -> Dict[str, Any]:
+    """Pull the WHOLE older history of one chat from the phone, in the background (batches of 50 every ~20 s,
+    paced like a human) until the date `since` or until the phone has nothing older. Use it when a chat's stored
+    history is incomplete and the user agreed to pull it. Returns right away; check with backfill_status.
+
+    Args:
+        chat_jid: The chat JID (e.g. "5527999999999@s.whatsapp.net" or a group "...@g.us")
+        since: Optional date YYYY-MM-DD to stop at; omit to go back as far as the phone has
+    """
+    success, status_message = whatsapp_backfill_chat_history(chat_jid, since)
+    return {"success": success, "message": status_message}
+
+@mcp.tool()
+def backfill_status(chat_jid: Optional[str] = None) -> Dict[str, Any]:
+    """Progress of backfill_chat_history: running, batches, messages stored, oldest message date, result.
+
+    Args:
+        chat_jid: The chat JID; omit to list every backfill since the bridge started
+    """
+    return {"status": whatsapp_backfill_status(chat_jid)}
 
 @mcp.tool()
 def download_media(message_id: str, chat_jid: str) -> Dict[str, Any]:

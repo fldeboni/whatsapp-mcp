@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional, List, Tuple
+from typing import Any, Optional, List, Tuple
 import os.path
 import requests
 import json
@@ -837,3 +837,24 @@ def download_media(message_id: str, chat_jid: str) -> Tuple[Optional[str], str]:
         return None, result.get("message", f"HTTP {response.status_code}")
     except requests.RequestException as e:
         return None, f"Bridge not reachable (is whatsapp-bridge running?): {e}"
+
+
+def backfill_chat_history(chat_jid: str, since: Optional[str] = None) -> Tuple[bool, str]:
+    try:
+        response = requests.post(f"{WHATSAPP_API_BASE_URL}/backfill", json={"chat_jid": chat_jid, "since": since or ""}, timeout=30)
+        result = response.json()
+        return result.get("success", False), result.get("message", f"HTTP {response.status_code}")
+    except requests.RequestException as e:
+        return False, f"Bridge not reachable (is whatsapp-bridge running?): {e}"
+    except ValueError:
+        return False, f"HTTP {response.status_code} - {response.text[:300]}"
+
+
+def backfill_status(chat_jid: Optional[str] = None) -> Any:
+    try:
+        response = requests.get(f"{WHATSAPP_API_BASE_URL}/backfill", params={"chat_jid": chat_jid or ""}, timeout=30)
+        return response.json()
+    except requests.RequestException as e:
+        return f"Bridge not reachable (is whatsapp-bridge running?): {e}"
+    except ValueError:
+        return f"HTTP {response.status_code} - {response.text[:300]}"

@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -933,6 +934,114 @@ func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, ch
 		count, ts.Format("2006-01-02 15:04"))
 }
 
+// Backfill: one paced loop per chat asking the phone for older batches until `since`, or until the phone stops
+// sending (3 batches in a row with nothing new = start of the chat, or the phone doesn't have more).
+type backfillJob struct {
+	ChatJID  string `json:"chat_jid"`
+	Since    string `json:"since,omitempty"`
+	Running  bool   `json:"running"`
+	Batches  int    `json:"batches"`
+	Messages int    `json:"messages"`
+	Oldest   string `json:"oldest,omitempty"`
+	Result   string `json:"result,omitempty"`
+}
+
+var (
+	backfillMu   sync.Mutex
+	backfillJobs = map[string]*backfillJob{}
+)
+
+func backfillStatus(chatJID string) interface{} {
+	backfillMu.Lock()
+	defer backfillMu.Unlock()
+	if chatJID == "" {
+		jobs := []backfillJob{}
+		for _, j := range backfillJobs {
+			jobs = append(jobs, *j)
+		}
+		return jobs
+	}
+	if j, ok := backfillJobs[chatJID]; ok {
+		return *j
+	}
+	return backfillJob{ChatJID: chatJID, Result: "no backfill started for this chat"}
+}
+
+func chatStats(messageStore *MessageStore, chatJID string) (int, time.Time) {
+	var n int
+	var oldest sql.NullString
+	messageStore.db.QueryRow("SELECT COUNT(*), MIN(timestamp) FROM messages WHERE chat_jid = ?", chatJID).Scan(&n, &oldest)
+	var t time.Time
+	if oldest.Valid {
+		for _, layout := range []string{"2006-01-02 15:04:05-07:00", time.RFC3339, "2006-01-02 15:04:05.999999999-07:00"} {
+			if p, err := time.Parse(layout, oldest.String); err == nil {
+				t = p
+				break
+			}
+		}
+	}
+	return n, t
+}
+
+func startBackfill(client *whatsmeow.Client, messageStore *MessageStore, chatJID string, since time.Time) (bool, string) {
+	if _, err := types.ParseJID(chatJID); err != nil {
+		return false, fmt.Sprintf("invalid chat JID: %v", err)
+	}
+	backfillMu.Lock()
+	if j, ok := backfillJobs[chatJID]; ok && j.Running {
+		backfillMu.Unlock()
+		return false, "a backfill is already running for this chat"
+	}
+	job := &backfillJob{ChatJID: chatJID, Running: true}
+	if !since.IsZero() {
+		job.Since = since.Format("2006-01-02")
+	}
+	backfillJobs[chatJID] = job
+	backfillMu.Unlock()
+
+	go func() {
+		stalls := 0
+		_, prevOldest := chatStats(messageStore, chatJID)
+		result := "stopped after the maximum number of batches"
+		for i := 0; i < 200; i++ {
+			if !since.IsZero() && !prevOldest.IsZero() && !prevOldest.After(since) {
+				result = "reached the requested date"
+				break
+			}
+			if ok, msg := requestChatHistory(client, messageStore, chatJID, 50); !ok {
+				result = "error: " + msg
+				break
+			}
+			time.Sleep(time.Duration(15+rand.Intn(11)) * time.Second) // human-ish pacing, also gives the phone time
+			n, oldest := chatStats(messageStore, chatJID)
+			backfillMu.Lock()
+			job.Batches, job.Messages = i+1, n
+			if !oldest.IsZero() {
+				job.Oldest = oldest.Local().Format("2006-01-02 15:04")
+			}
+			backfillMu.Unlock()
+			if oldest.Equal(prevOldest) {
+				if stalls++; stalls >= 3 {
+					result = "the phone sent nothing older (start of the chat, or the phone doesn't have older messages)"
+					break
+				}
+			} else {
+				stalls = 0
+			}
+			prevOldest = oldest
+		}
+		n, oldest := chatStats(messageStore, chatJID)
+		backfillMu.Lock()
+		job.Running, job.Messages, job.Result = false, n, result
+		if !oldest.IsZero() {
+			job.Oldest = oldest.Local().Format("2006-01-02 15:04")
+		}
+		backfillMu.Unlock()
+		fmt.Printf("Backfill %s finished: %d messages, oldest %s (%s)\n", chatJID, n, job.Oldest, result)
+	}()
+	return true, "backfill started; it asks the phone for 50 older messages every ~20s (phone must be online). Check progress with the status call."
+}
+
 // saveContact creates or updates a WhatsApp contact (the "contact" app-state action WhatsApp Web/app use since 2024,
 // synced to all devices; saveOnPhone also asks the phone to save it in its own address book).
 func saveContact(client *whatsmeow.Client, messageStore *MessageStore, phone, fullName, firstName string, saveOnPhone bool) (bool, string) {
@@ -1607,6 +1716,42 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 		ok, msg := requestChatHistory(client, messageStore, req.ChatJID, req.Count)
 		if !ok {
 			w.WriteHeader(http.StatusInternalServerError)
+		}
+		json.NewEncoder(w).Encode(SendMessageResponse{Success: ok, Message: msg})
+	})
+
+	// Handler for a full history backfill of one chat (paced batches of 50 until a date); GET returns its status
+	http.HandleFunc("/api/backfill", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(backfillStatus(r.URL.Query().Get("chat_jid")))
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ChatJID string `json:"chat_jid"`
+			Since   string `json:"since"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ChatJID == "" {
+			http.Error(w, "chat_jid is required", http.StatusBadRequest)
+			return
+		}
+		var since time.Time
+		if req.Since != "" {
+			t, err := time.ParseInLocation("2006-01-02", req.Since, time.Local)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(SendMessageResponse{Success: false, Message: "since must be YYYY-MM-DD"})
+				return
+			}
+			since = t
+		}
+		ok, msg := startBackfill(client, messageStore, req.ChatJID, since)
+		if !ok {
+			w.WriteHeader(http.StatusConflict)
 		}
 		json.NewEncoder(w).Encode(SendMessageResponse{Success: ok, Message: msg})
 	})

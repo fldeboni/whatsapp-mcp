@@ -31,7 +31,7 @@ Conecta o WhatsApp **pessoal** ao Claude via whatsmeow (protocolo não oficial �
 11. **Auto mark-read** (`auto-markread.json` em `%USERPROFILE%\.whatsapp-mcp`, modelo em `auto-markread.example.json`): goroutine no bridge, intervalo aleatório entre `interval_min_minutes` e `interval_max_minutes`, só dentro de `window_start`–`window_end`, pula grupos sem nada novo. Usa o relógio de parede (os timers monotônicos do Go no Windows não andam durante a hibernação).
 
 12. **Busca de contatos na agenda**: `search_contacts` procura nas conversas E na agenda do WhatsApp (`whatsmeow_contacts`, código LID convertido para número), sem diferenciar acentos (`list_chats` também). Conversas gravadas só com o número ganham nome: o bridge tenta de novo a agenda, e `fix_chat_names.py` corrige o banco (rodado pelo `update.ps1`).
-13. **`request_chat_history`**: busca no celular mensagens antigas de uma conversa (até 50 por vez). **Mensagens interativas** (cartão de chave Pix etc.) são gravadas como texto.
+13. **`request_chat_history`**: busca no celular mensagens antigas de uma conversa (até 50 por vez); `backfill_chat_history` puxa o histórico inteiro em segundo plano até uma data (`backfill_status` mostra o andamento). **Mensagens interativas** (cartão de chave Pix etc.) são gravadas como texto.
 14. Aparelho aparece como **"Claude (WhatsApp MCP)"**, tipo computador, em Aparelhos conectados (vale para pareamentos novos).
 
 ## Atualização
@@ -48,7 +48,8 @@ Leitura liberada, envio sempre perguntando — qualquer contato pode mandar text
     "mcp__whatsapp__search_contacts", "mcp__whatsapp__list_messages", "mcp__whatsapp__list_chats",
     "mcp__whatsapp__get_chat", "mcp__whatsapp__get_direct_chat_by_contact", "mcp__whatsapp__get_contact_chats",
     "mcp__whatsapp__get_last_interaction", "mcp__whatsapp__get_message_context", "mcp__whatsapp__download_media",
-    "mcp__whatsapp__mark_chats_as_read", "mcp__whatsapp__request_chat_history"
+    "mcp__whatsapp__mark_chats_as_read", "mcp__whatsapp__request_chat_history",
+    "mcp__whatsapp__backfill_chat_history", "mcp__whatsapp__backfill_status"
   ],
   "ask": ["mcp__whatsapp__send_message", "mcp__whatsapp__send_file", "mcp__whatsapp__send_audio_message", "mcp__whatsapp__send_reaction", "mcp__whatsapp__save_contact"]
 }
