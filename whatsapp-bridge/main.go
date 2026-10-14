@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -29,6 +30,7 @@ import (
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	"go.mau.fi/whatsmeow/proto/waMmsRetry"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	wastore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -871,6 +873,22 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 
 	// Download the media using whatsmeow client
 	mediaData, err := client.Download(context.Background(), downloader)
+	if errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) || errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith404) ||
+		errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith410) {
+		// Expired on WhatsApp's servers (they keep media for a few weeks): ask the phone to upload it again,
+		// like WhatsApp Web's "download from phone". Works while the phone still has the file.
+		fmt.Printf("Media %s expired on the server (%v); asking the phone to re-upload...\n", messageID, err)
+		newPath, rerr := mediaRetryFromPhone(client, messageStore, messageID, chatJID, mediaKey)
+		if rerr != nil {
+			return false, "", "", "", fmt.Errorf("media expired on WhatsApp's servers and the phone could not re-upload it: %v", rerr)
+		}
+		downloader.DirectPath = newPath
+		mediaData, err = client.Download(context.Background(), downloader)
+		if err == nil {
+			messageStore.db.Exec("UPDATE messages SET url = ? WHERE id = ? AND chat_jid = ?",
+				"https://mmg.whatsapp.net"+newPath, messageID, chatJID)
+		}
+	}
 	if err != nil {
 		return false, "", "", "", fmt.Errorf("failed to download media: %v", err)
 	}
@@ -882,6 +900,69 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 
 	fmt.Printf("Successfully downloaded %s media to %s (%d bytes)\n", mediaType, absPath, len(mediaData))
 	return true, mediaType, filename, absPath, nil
+}
+
+// Media retry: the phone answers a retry receipt with an events.MediaRetry carrying the new direct path.
+var (
+	mediaRetryMu      sync.Mutex
+	mediaRetryWaiters = map[string]chan *events.MediaRetry{}
+)
+
+func handleMediaRetry(evt *events.MediaRetry) {
+	mediaRetryMu.Lock()
+	ch, ok := mediaRetryWaiters[evt.MessageID]
+	mediaRetryMu.Unlock()
+	if ok {
+		select {
+		case ch <- evt:
+		default:
+		}
+	}
+}
+
+func mediaRetryFromPhone(client *whatsmeow.Client, messageStore *MessageStore, messageID, chatJID string, mediaKey []byte) (string, error) {
+	chat, err := types.ParseJID(chatJID)
+	if err != nil {
+		return "", err
+	}
+	author, err := messageAuthor(client, messageStore, chat, messageID)
+	if err != nil {
+		return "", err
+	}
+	var fromMe bool
+	messageStore.db.QueryRow("SELECT is_from_me FROM messages WHERE id = ? AND chat_jid = ?", messageID, chatJID).Scan(&fromMe)
+	info := &types.MessageInfo{MessageSource: types.MessageSource{Chat: chat, Sender: author, IsFromMe: fromMe,
+		IsGroup: chat.Server == types.GroupServer}, ID: messageID}
+
+	ch := make(chan *events.MediaRetry, 1)
+	mediaRetryMu.Lock()
+	mediaRetryWaiters[messageID] = ch
+	mediaRetryMu.Unlock()
+	defer func() {
+		mediaRetryMu.Lock()
+		delete(mediaRetryWaiters, messageID)
+		mediaRetryMu.Unlock()
+	}()
+
+	if err := client.SendMediaRetryReceipt(context.Background(), info, mediaKey); err != nil {
+		return "", fmt.Errorf("failed to ask the phone: %v", err)
+	}
+	select {
+	case evt := <-ch:
+		if evt.Error != nil {
+			return "", fmt.Errorf("phone answered with error code %d", evt.Error.Code)
+		}
+		notif, err := whatsmeow.DecryptMediaRetryNotification(evt, mediaKey)
+		if err != nil {
+			return "", fmt.Errorf("failed to read the phone's answer: %v", err)
+		}
+		if notif.GetResult() != waMmsRetry.MediaRetryNotification_SUCCESS {
+			return "", fmt.Errorf("phone could not re-upload (%s; the file is probably no longer on the phone)", notif.GetResult())
+		}
+		return notif.GetDirectPath(), nil
+	case <-time.After(60 * time.Second):
+		return "", fmt.Errorf("no answer from the phone in 60 s (is it online?)")
+	}
 }
 
 // groupSenderServer tells whether a group addresses participants by LID or phone number,
@@ -1864,6 +1945,9 @@ func main() {
 		case *events.Message:
 			// Process regular messages
 			handleMessage(client, messageStore, v, logger)
+
+		case *events.MediaRetry:
+			handleMediaRetry(v)
 
 		case *events.HistorySync:
 			// Process history sync events

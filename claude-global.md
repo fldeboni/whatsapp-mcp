@@ -1,7 +1,7 @@
 # WhatsApp MCP — ferramentas instaladas
 
 MCP `whatsapp` (escopo user) ligado ao WhatsApp pessoal do usuário deste computador. Ferramentas `mcp__whatsapp__*`:
-- Leitura: `search_contacts`, `list_chats`, `list_messages`, `get_chat`, `get_direct_chat_by_contact`, `get_contact_chats`, `get_last_interaction`, `get_message_context`, `download_media`.
+- Leitura: `search_contacts`, `list_chats`, `list_messages`, `get_chat`, `get_direct_chat_by_contact`, `get_contact_chats`, `get_last_interaction`, `get_message_context`, `download_media` (mídia antiga que expirou no servidor do WhatsApp é pedida de volta ao celular automaticamente — pode levar até 1 min; só falha se o arquivo não estiver mais no celular).
 - `mark_chats_as_read` (já pausa 4–12 s entre conversas para parecer humano).
 - `request_chat_history`: busca no celular mensagens ANTIGAS de uma conversa (até 50 por vez, mais antigas que a mais antiga guardada); espere alguns segundos e chame `list_messages` de novo. Use quando a mensagem procurada é anterior à instalação.
 - `backfill_chat_history(chat_jid, since="AAAA-MM-DD")`: puxa o histórico INTEIRO de uma conversa em segundo plano (lotes de 50 a cada ~20 s, até a data ou até o celular não ter mais); acompanhe com `backfill_status`. Grupo com centenas de mensagens leva alguns minutos.
