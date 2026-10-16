@@ -50,6 +50,8 @@ Se você instalou por um zip antigo, o `update.ps1` explica como migrar para o r
 ## Marcar grupos como lidos automaticamente (opcional)
 
 Copie `auto-markread.example.json` para `%USERPROFILE%\.whatsapp-mcp\auto-markread.json` e coloque os grupos em `chats`
+
+Opcional: para o notebook não dormir quando a tela apaga (só na tomada), copie `keep-awake.example.json` para `%USERPROFILE%\.whatsapp-mcp\keep-awake.json`. A tela continua apagando; fechar a tampa ainda suspende.
 (ou peça ao Claude: *"configure o auto-markread com meus grupos de promoção"*). O bridge marca esses grupos como lidos
 a cada 30–60 min (aleatório), só entre 07:00 e 22:00, com pausas de humano entre um grupo e outro. Edições no arquivo valem no ciclo seguinte.
 

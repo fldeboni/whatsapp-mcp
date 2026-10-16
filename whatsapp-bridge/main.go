@@ -2092,6 +2092,9 @@ func main() {
 	// Periodic mark-as-read of the chats listed in auto-markread.json (off when the file is missing)
 	startAutoMarkRead(client, messageStore, logger)
 
+	// Keep the notebook from sleeping when the screen turns off (off unless keep-awake.json enables it)
+	startKeepAwake()
+
 	// Create a channel to keep the main goroutine alive
 	exitChan := make(chan os.Signal, 1)
 	signal.Notify(exitChan, syscall.SIGINT, syscall.SIGTERM)
