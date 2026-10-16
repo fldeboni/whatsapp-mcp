@@ -1011,7 +1011,10 @@ func senderServerFor(client *whatsmeow.Client, chat types.JID) string {
 }
 
 // requestChatHistory asks the phone for up to `count` messages older than the oldest one stored for the chat.
-func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, chatJID string, count int) (bool, string) {
+// requestChatHistory asks the phone for `count` messages older than an anchor message. The anchor is the oldest
+// stored message, or - with `before` set - the first stored message at/after `before`, which fills a GAP in the
+// middle of a chat (e.g. days when the bridge was down) instead of only extending the start.
+func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, chatJID string, count int, before time.Time) (bool, string) {
 	chat, err := types.ParseJID(chatJID)
 	if err != nil {
 		return false, fmt.Sprintf("invalid chat JID: %v", err)
@@ -1019,9 +1022,15 @@ func requestChatHistory(client *whatsmeow.Client, messageStore *MessageStore, ch
 	var id, senderJID string
 	var ts time.Time
 	var fromMe bool
-	err = messageStore.db.QueryRow(
-		"SELECT id, timestamp, is_from_me, COALESCE(sender_jid, '') FROM messages WHERE chat_jid = ? ORDER BY timestamp ASC LIMIT 1",
-		chatJID).Scan(&id, &ts, &fromMe, &senderJID)
+	if before.IsZero() {
+		err = messageStore.db.QueryRow(
+			"SELECT id, timestamp, is_from_me, COALESCE(sender_jid, '') FROM messages WHERE chat_jid = ? ORDER BY timestamp ASC LIMIT 1",
+			chatJID).Scan(&id, &ts, &fromMe, &senderJID)
+	} else {
+		err = messageStore.db.QueryRow(
+			"SELECT id, timestamp, is_from_me, COALESCE(sender_jid, '') FROM messages WHERE chat_jid = ? AND timestamp >= ? ORDER BY timestamp ASC LIMIT 1",
+			chatJID, before.Format("2006-01-02 15:04:05-07:00")).Scan(&id, &ts, &fromMe, &senderJID)
+	}
 	if err == sql.ErrNoRows {
 		// Nothing stored yet (e.g. a group that only came in via GetJoinedGroups): anchor at "now" with no ID so
 		// the phone sends the most recent messages; the next request then anchors on the oldest of those.
@@ -1118,7 +1127,7 @@ func startBackfill(client *whatsmeow.Client, messageStore *MessageStore, chatJID
 				result = "reached the requested date"
 				break
 			}
-			if ok, msg := requestChatHistory(client, messageStore, chatJID, 50); !ok {
+			if ok, msg := requestChatHistory(client, messageStore, chatJID, 50, time.Time{}); !ok {
 				result = "error: " + msg
 				break
 			}
@@ -1814,6 +1823,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 		var req struct {
 			ChatJID string `json:"chat_jid"`
 			Count   int    `json:"count"`
+			Before  string `json:"before"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ChatJID == "" {
 			http.Error(w, "chat_jid is required", http.StatusBadRequest)
@@ -1823,7 +1833,17 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 			req.Count = 50
 		}
 		w.Header().Set("Content-Type", "application/json")
-		ok, msg := requestChatHistory(client, messageStore, req.ChatJID, req.Count)
+		var before time.Time
+		if req.Before != "" {
+			t, err := time.ParseInLocation("2006-01-02", req.Before, time.Local)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(SendMessageResponse{Success: false, Message: "before must be YYYY-MM-DD"})
+				return
+			}
+			before = t.AddDate(0, 0, 1) // "before 2026-10-06" includes the 6th: anchor on the first message of the 7th or later
+		}
+		ok, msg := requestChatHistory(client, messageStore, req.ChatJID, req.Count, before)
 		if !ok {
 			w.WriteHeader(http.StatusInternalServerError)
 		}

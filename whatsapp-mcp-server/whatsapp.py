@@ -760,9 +760,10 @@ def send_reaction(chat_jid: str, message_id: str, emoji: str) -> Tuple[bool, str
     except ValueError:
         return False, f"HTTP {response.status_code} - {response.text[:300]}"
 
-def request_chat_history(chat_jid: str, count: int = 50) -> Tuple[bool, str]:
+def request_chat_history(chat_jid: str, count: int = 50, until_date: Optional[str] = None) -> Tuple[bool, str]:
     try:
-        response = requests.post(f"{WHATSAPP_API_BASE_URL}/history", json={"chat_jid": chat_jid, "count": count}, timeout=30)
+        response = requests.post(f"{WHATSAPP_API_BASE_URL}/history",
+                                 json={"chat_jid": chat_jid, "count": count, "before": until_date or ""}, timeout=30)
         result = response.json()
         return result.get("success", False), result.get("message", f"HTTP {response.status_code}")
     except requests.RequestException as e:

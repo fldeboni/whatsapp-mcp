@@ -305,17 +305,22 @@ def send_reaction(chat_jid: str, message_id: str, emoji: str) -> Dict[str, Any]:
     return {"success": success, "message": status_message}
 
 @mcp.tool()
-def request_chat_history(chat_jid: str, count: int = 50) -> Dict[str, Any]:
+def request_chat_history(chat_jid: str, count: int = 50, until_date: Optional[str] = None) -> Dict[str, Any]:
     """Fetch OLDER messages of one chat from the phone (history from before the MCP was connected is incomplete).
     Asks the phone for up to `count` (max 50) messages older than the oldest one stored (or the latest ones,
-    if the chat has nothing stored yet); they arrive a few seconds
-    later. Then call list_messages again. Repeat to go further back. The phone must be online.
+    if the chat has nothing stored yet); they arrive a few seconds later. Then call list_messages again.
+    Repeat to go further back. The phone must be online.
+
+    GAPS: a chat can miss days in the MIDDLE (bridge was off) even though older and newer messages exist - a
+    plain request never fills those. If a day/period has no messages but the user says there are, call this with
+    until_date = the last day of the gap (YYYY-MM-DD): the phone sends the messages up to that day.
 
     Args:
         chat_jid: The chat JID (e.g. "5527999999999@s.whatsapp.net" or a group "...@g.us")
         count: How many older messages to request (1-50, default 50)
+        until_date: Optional YYYY-MM-DD; fetch messages up to and including this day (fills a gap)
     """
-    success, status_message = whatsapp_request_chat_history(chat_jid, count)
+    success, status_message = whatsapp_request_chat_history(chat_jid, count, until_date)
     return {"success": success, "message": status_message}
 
 @mcp.tool()
