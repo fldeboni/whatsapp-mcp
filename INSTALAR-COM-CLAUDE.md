@@ -139,6 +139,8 @@ O recurso vem **desligado** (sem o arquivo de configuração, nada é marcado). 
 só pergunte se ela quer. Se quiser, ela escolhe os grupos (mostre com `list_chats` ou pelo banco `messages.db` e confirme a lista final com ela), e você cria
 `%USERPROFILE%\.whatsapp-mcp\auto-markread.json` a partir de `auto-markread.example.json`. O bridge marca esses grupos a cada 30–60 min (aleatório), só entre 07:00 e 22:00, com pausas de humano. Mudanças valem no ciclo seguinte, sem reiniciar.
 
+**Opcional — não dormir com a tela apagada:** só se o colega pedir, copie `keep-awake.example.json` para `%USERPROFILE%\.whatsapp-mcp\keep-awake.json` (vale só na tomada; a tela continua apagando; fechar a tampa ainda suspende). Não altere o plano de energia do Windows.
+
 ### Etapa 10 — Teste final e entrega
 
 1. Peça para a pessoa abrir uma **conversa nova** no Claude (o MCP só aparece em sessões novas) e testar: *"liste minhas 5 conversas mais recentes do WhatsApp"*.
