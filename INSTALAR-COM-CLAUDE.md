@@ -14,7 +14,7 @@
 | **Notebook Windows 10/11** | o MCP roda local | — |
 | **Claude com Claude Code** (plano Pro, Max, Team ou Enterprise) | para o Claude executar a instalação e depois usar o WhatsApp | claude.ai → baixar o app desktop (aba *Code*) ou `npm install -g @anthropic-ai/claude-code` |
 | **Conta no GitHub** (grátis) | baixar o código e receber atualizações | github.com/signup |
-| **Acesso ao repositório privado `fldeboni/whatsapp-mcp`** | o código é privado | mande seu **usuário do GitHub** pro Felipe e **aceite o convite** que chega por e-mail (ou em github.com/notifications) |
+| **Acesso ao repositório privado `fldeboni/whatsapp-mcp`** | o código é privado | mande seu **usuário do GitHub** (ou o e-mail da conta) pro Felipe e **aceite o convite antes de começar** — chega por e-mail ou em github.com/notifications; aceite logado na mesma conta que vai usar no notebook |
 | **WhatsApp no celular, por perto** | escanear o QR code (como no WhatsApp Web) | — |
 | **Permissão de administrador no notebook** | alguns instaladores (Git, Go) pedem confirmação do Windows (UAC) | se a máquina for corporativa e bloquear, peça ao TI |
 
