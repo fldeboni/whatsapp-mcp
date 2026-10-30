@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Any, Optional, List, Tuple
+from typing import Any, Dict, Optional, List, Tuple
 import os.path
 import requests
 import json
@@ -903,3 +903,30 @@ def backfill_status(chat_jid: Optional[str] = None) -> Any:
         return f"Bridge not reachable (is whatsapp-bridge running?): {e}"
     except ValueError:
         return f"HTTP {response.status_code} - {response.text[:300]}"
+
+def _group_call(path: str, payload: Dict[str, Any], timeout: int = 90) -> Dict[str, Any]:
+    """POST to a /api/group/* endpoint; drops None fields so only what was given is changed."""
+    try:
+        body = {k: v for k, v in payload.items() if v is not None}
+        response = requests.post(f"{WHATSAPP_API_BASE_URL}/group/{path}", json=body, timeout=timeout)
+        try:
+            return response.json()
+        except ValueError:
+            return {"success": False, "message": f"HTTP {response.status_code} - {response.text[:300]}"}
+    except requests.RequestException as e:
+        return {"success": False, "message": f"Bridge not reachable (is whatsapp-bridge running?): {e}"}
+
+def create_group(name: str, participants: List[str], description: Optional[str] = None,
+                 photo_path: Optional[str] = None, **permissions: Optional[bool]) -> Dict[str, Any]:
+    return _group_call("create", {"name": name, "participants": participants, "description": description,
+                                  "photo_path": photo_path, **permissions}, timeout=180)
+
+def update_group_settings(chat_jid: str, **fields: Any) -> Dict[str, Any]:
+    return _group_call("settings", {"chat_jid": chat_jid, **fields})
+
+def update_group_members(chat_jid: str, action: str, participants: List[str]) -> Dict[str, Any]:
+    return _group_call("members", {"chat_jid": chat_jid, "action": action, "participants": participants}, timeout=180)
+
+def group_info(chat_jid: str, include_invite_link: bool = False, reset_invite_link: bool = False) -> Dict[str, Any]:
+    return _group_call("info", {"chat_jid": chat_jid, "include_invite_link": include_invite_link,
+                                "reset_invite_link": reset_invite_link})

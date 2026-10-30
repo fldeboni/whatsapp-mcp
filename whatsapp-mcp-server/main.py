@@ -39,7 +39,11 @@ from whatsapp import (
     backfill_status as whatsapp_backfill_status,
     message_status as whatsapp_message_status,
     send_reaction as whatsapp_send_reaction,
-    save_contact as whatsapp_save_contact
+    save_contact as whatsapp_save_contact,
+    create_group as whatsapp_create_group,
+    update_group_settings as whatsapp_update_group_settings,
+    update_group_members as whatsapp_update_group_members,
+    group_info as whatsapp_group_info
 )
 
 # Initialize FastMCP server
@@ -303,6 +307,90 @@ def send_reaction(chat_jid: str, message_id: str, emoji: str) -> Dict[str, Any]:
     """
     success, status_message = whatsapp_send_reaction(chat_jid, message_id, emoji)
     return {"success": success, "message": status_message}
+
+@mcp.tool()
+def get_group_info(chat_jid: str, include_invite_link: bool = False, reset_invite_link: bool = False) -> Dict[str, Any]:
+    """Current info of a group, straight from WhatsApp: name, description, members (phone, name, role: criador/admin/
+    membro), whether I am admin, and the permission settings. Optionally the invite link (I must be admin).
+
+    Args:
+        chat_jid: The group JID ("...@g.us"; find it with list_chats)
+        include_invite_link: Also return the group's invite link (https://chat.whatsapp.com/...)
+        reset_invite_link: Revoke the current link and return a new one (the old link stops working)
+    """
+    return whatsapp_group_info(chat_jid, include_invite_link, reset_invite_link)
+
+@mcp.tool()
+def create_group(
+    name: str,
+    participants: List[str],
+    description: Optional[str] = None,
+    photo_path: Optional[str] = None,
+    only_admins_send: Optional[bool] = None,
+    only_admins_edit: Optional[bool] = None,
+    only_admins_add: Optional[bool] = None,
+    approve_new_members: Optional[bool] = None
+) -> Dict[str, Any]:
+    """Create a WhatsApp group (I become its admin). Members are notified. Avoid adding many unknown numbers at
+    once (ban risk). People whose privacy blocks being added are reported in "not_added": send them the invite
+    link (get_group_info with include_invite_link=True).
+
+    Args:
+        name: Group name (up to 100 characters)
+        participants: Phone numbers with country code, digits only (e.g. ["5527999999999"]); I'm added automatically
+        description: Optional group description
+        photo_path: Optional absolute path to a JPEG/PNG for the group picture (cropped to a square automatically)
+        only_admins_send: True = only admins can send messages
+        only_admins_edit: True = only admins can edit name/description/photo
+        only_admins_add: True = only admins can add members
+        approve_new_members: True = admins must approve people joining via link
+    """
+    return whatsapp_create_group(name, participants, description, photo_path,
+                                 only_admins_send=only_admins_send, only_admins_edit=only_admins_edit,
+                                 only_admins_add=only_admins_add, approve_new_members=approve_new_members)
+
+@mcp.tool()
+def update_group_settings(
+    chat_jid: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    photo_path: Optional[str] = None,
+    remove_photo: bool = False,
+    only_admins_send: Optional[bool] = None,
+    only_admins_edit: Optional[bool] = None,
+    only_admins_add: Optional[bool] = None,
+    approve_new_members: Optional[bool] = None
+) -> Dict[str, Any]:
+    """Change a group's name, description, picture and/or permissions. Only the fields given are changed.
+    Usually requires being an admin (check get_group_info "i_am_admin"). Members see a notice of each change.
+
+    Args:
+        chat_jid: The group JID ("...@g.us")
+        name: New group name
+        description: New description ("" removes it)
+        photo_path: Absolute path to a JPEG/PNG for the new picture (cropped to a square automatically)
+        remove_photo: True removes the current picture
+        only_admins_send: True = only admins can send messages; False = everyone
+        only_admins_edit: True = only admins can edit group info; False = everyone
+        only_admins_add: True = only admins can add members; False = everyone
+        approve_new_members: True = admins approve people joining via link; False = join directly
+    """
+    return whatsapp_update_group_settings(chat_jid, name=name, description=description, photo_path=photo_path,
+                                          remove_photo=remove_photo, only_admins_send=only_admins_send,
+                                          only_admins_edit=only_admins_edit, only_admins_add=only_admins_add,
+                                          approve_new_members=approve_new_members)
+
+@mcp.tool()
+def update_group_members(chat_jid: str, action: str, participants: List[str]) -> Dict[str, Any]:
+    """Add, remove, promote to admin or demote from admin members of a group (I must be admin). Everyone in the
+    group sees it. For "add", people whose privacy blocks it come back in "failed": send them the invite link.
+
+    Args:
+        chat_jid: The group JID ("...@g.us")
+        action: "add", "remove", "promote" (make admin) or "demote" (remove admin)
+        participants: Phone numbers with country code, digits only (e.g. ["5527999999999"])
+    """
+    return whatsapp_update_group_members(chat_jid, action, participants)
 
 @mcp.tool()
 def request_chat_history(chat_jid: str, count: int = 50, until_date: Optional[str] = None) -> Dict[str, Any]:
