@@ -148,6 +148,9 @@ func NewMessageStore() (*MessageStore, error) {
 	// Delivery/read/played receipts for messages WE sent, one row per recipient (groups have many)
 	db.Exec(`CREATE TABLE IF NOT EXISTS message_receipts (message_id TEXT, chat_jid TEXT, recipient TEXT,
 		delivered_at TIMESTAMP, read_at TIMESTAMP, played_at TIMESTAMP, PRIMARY KEY (message_id, chat_jid, recipient))`)
+	// Emoji reactions to any message (ours or others'), one row per person; removing a reaction deletes the row
+	db.Exec(`CREATE TABLE IF NOT EXISTS message_reactions (message_id TEXT, chat_jid TEXT, reactor TEXT, from_me BOOLEAN,
+		emoji TEXT, reacted_at TIMESTAMP, PRIMARY KEY (message_id, chat_jid, reactor))`)
 
 	return &MessageStore{db: db}, nil
 }
@@ -628,6 +631,25 @@ func handleReceipt(client *whatsmeow.Client, messageStore *MessageStore, v *even
 	}
 }
 
+// storeReaction records (or, for an empty emoji, removes) one person's reaction to a message.
+func storeReaction(messageStore *MessageStore, messageID, chatJID, reactor string, fromMe bool, emoji string, at, fallback time.Time) {
+	if messageID == "" || reactor == "" {
+		return
+	}
+	if emoji == "" {
+		messageStore.db.Exec("DELETE FROM message_reactions WHERE message_id = ? AND chat_jid = ? AND reactor = ?",
+			messageID, chatJID, reactor)
+		return
+	}
+	if at.Unix() <= 0 {
+		at = fallback
+	}
+	messageStore.db.Exec(`INSERT INTO message_reactions (message_id, chat_jid, reactor, from_me, emoji, reacted_at)
+		VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(message_id, chat_jid, reactor) DO UPDATE SET emoji = excluded.emoji,
+		reacted_at = excluded.reacted_at WHERE excluded.reacted_at >= message_reactions.reacted_at`,
+		messageID, chatJID, reactor, fromMe, emoji, at)
+}
+
 func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *events.Message, logger waLog.Logger) {
 	// Save message to database
 	msg.Info.Chat = normalizeChat(client, msg.Info.Chat)
@@ -652,6 +674,17 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 				logger.Infof("Edit for unknown message %s in %s (original not stored)", origID, chatJID)
 			}
 		}
+		return
+	}
+
+	// A reaction arrives as its own message pointing at the reacted one; store it against that message.
+	if rm := msg.Message.GetReactionMessage(); rm != nil {
+		reactor := sender
+		if msg.Info.IsFromMe {
+			reactor = client.Store.ID.User
+		}
+		storeReaction(messageStore, rm.GetKey().GetID(), chatJID, reactor, msg.Info.IsFromMe, rm.GetText(),
+			time.UnixMilli(rm.GetSenderTimestampMS()), msg.Info.Timestamp)
 		return
 	}
 
@@ -2276,6 +2309,23 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 
 				// Log the message content for debugging
 				logger.Infof("Message content: %v, Media Type: %v", content, mediaType)
+
+				// Reactions come attached to the reacted message in history syncs
+				if msg.Message.Key != nil {
+					for _, r := range msg.Message.GetReactions() {
+						fromMe := r.GetKey().GetFromMe()
+						reactor := jid.User
+						if fromMe {
+							reactor = client.Store.ID.User
+						} else if p := r.GetKey().GetParticipant(); p != "" {
+							if pj, err := types.ParseJID(p); err == nil {
+								reactor = normalizeChat(client, pj).User
+							}
+						}
+						storeReaction(messageStore, msg.Message.Key.GetID(), chatJID, reactor, fromMe, r.GetText(),
+							time.UnixMilli(r.GetSenderTimestampMS()), time.Now())
+					}
+				}
 
 				// Skip messages with no content and no media
 				if content == "" && mediaType == "" {

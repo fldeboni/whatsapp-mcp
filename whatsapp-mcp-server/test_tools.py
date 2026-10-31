@@ -31,6 +31,12 @@ INSERT INTO messages (id, chat_jid, sender, content, timestamp, is_from_me)
   VALUES ('MSGME', '5500000000001@s.whatsapp.net', 'me', 'minha mensagem', '2026-01-01 10:05:00-03:00', 1);
 INSERT INTO message_receipts VALUES ('MSGME', '5500000000001@s.whatsapp.net', '5500000000001', '2026-01-01 10:05:01-03:00', '2026-01-01 10:06:00-03:00', NULL);
 """)
+db.executescript("""
+CREATE TABLE message_reactions (message_id TEXT, chat_jid TEXT, reactor TEXT, from_me BOOLEAN, emoji TEXT, reacted_at TIMESTAMP,
+  PRIMARY KEY (message_id, chat_jid, reactor));
+INSERT INTO message_reactions VALUES ('MSG1', '5500000000001@s.whatsapp.net', '5500000000001', 0, '👍', '2026-01-01 10:00:30-03:00');
+INSERT INTO message_reactions VALUES ('MSG1', '5500000000001@s.whatsapp.net', '5599999999999', 1, '❤️', '2026-01-01 10:00:40-03:00');
+""")
 db.commit()
 
 # Address book (whatsmeow session store): a contact with no synced chat, stored under a LID with a device suffix
@@ -93,6 +99,12 @@ async def run():
     else:
         failed += 1
         print(f'FAIL recibos: {text[:200]} | {text2[:200]}')
+    # Reactions: who reacted with what, on any message
+    if '[REAÇÕES: 👍 Fulano Teste, ❤️ Eu]' in text:
+        print('ok   reacoes')
+    else:
+        failed += 1
+        print(f'FAIL reacoes: {text[:300]}')
     return failed
 
 sys.exit(1 if asyncio.run(run()) else 0)

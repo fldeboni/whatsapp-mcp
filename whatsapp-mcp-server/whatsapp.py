@@ -154,6 +154,27 @@ def _receipt_mark(message_id: str, chat_jid: str) -> str:
     return f'[ENTREGUE em {str(d)[:16]}, não lida] '
 
 
+def _reactions(message_id: str, chat_jid: str) -> list:
+    try:
+        conn = sqlite3.connect(MESSAGES_DB_PATH)
+        try:
+            return conn.execute('SELECT reactor, from_me, emoji, reacted_at FROM message_reactions '
+                                'WHERE message_id = ? AND chat_jid = ? ORDER BY reacted_at', (message_id, chat_jid)).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []  # bridge older than the reactions table
+
+
+def _reaction_mark(message_id: str, chat_jid: str) -> str:
+    """Emoji reactions on a message, with who reacted: [REAÇÕES: 👍 Maria, ❤️ Eu]."""
+    rows = _reactions(message_id, chat_jid)
+    if not rows:
+        return ''
+    who = [f"{emoji} {'Eu' if from_me else get_sender_name(reactor)}" for reactor, from_me, emoji, _ in rows]
+    return f"[REAÇÕES: {', '.join(who)}] "
+
+
 def message_status(chat_jid: str, message_id: str) -> dict:
     rows = _receipts(message_id, chat_jid)
     fmt = lambda t: str(t)[:19] if t else None
@@ -184,6 +205,7 @@ def format_message(message: Message, show_chat_info: bool = True) -> None:
     content_prefix += _edit_delete_marks(message.id, message.chat_jid)
     if message.is_from_me:
         content_prefix += _receipt_mark(message.id, message.chat_jid)
+    content_prefix += _reaction_mark(message.id, message.chat_jid)
     try:
         sender_name = get_sender_name(message.sender) if not message.is_from_me else "Me"
         output += f"From: {sender_name}: {content_prefix}{message.content}\n"
