@@ -952,3 +952,14 @@ def update_group_members(chat_jid: str, action: str, participants: List[str]) ->
 def group_info(chat_jid: str, include_invite_link: bool = False, reset_invite_link: bool = False) -> Dict[str, Any]:
     return _group_call("info", {"chat_jid": chat_jid, "include_invite_link": include_invite_link,
                                 "reset_invite_link": reset_invite_link})
+
+def send_contact(recipient: str, contacts: List[Dict[str, Any]], reply_to: Optional[str] = None) -> Tuple[bool, str]:
+    try:
+        response = requests.post(f"{WHATSAPP_API_BASE_URL}/send_contact",
+                                 json={"recipient": recipient, "contacts": contacts, "reply_to": reply_to or ""}, timeout=60)
+        result = response.json()
+        return result.get("success", False), result.get("message", f"HTTP {response.status_code}")
+    except requests.RequestException as e:
+        return False, f"Bridge not reachable (is whatsapp-bridge running?): {e}"
+    except ValueError:
+        return False, f"HTTP {response.status_code} - {response.text[:300]}"

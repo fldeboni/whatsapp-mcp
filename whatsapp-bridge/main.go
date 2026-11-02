@@ -272,7 +272,8 @@ func extractTextContent(msg *waProto.Message) string {
 	if im := msg.GetInteractiveMessage(); im != nil {
 		return extractInteractiveText(im)
 	}
-	return ""
+	// Contact cards and locations (fixed and live)
+	return extractSharedContent(msg)
 }
 
 // extractInteractiveText renders an interactive message as text. Native-flow buttons carry their data as JSON
@@ -714,6 +715,10 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 
 	// Extract text content
 	content := extractTextContent(msg.Message)
+	// Live location sends a position update every few seconds: keep one row per sharing session, updated in place.
+	if msg.Message.GetLiveLocationMessage() != nil && updateLiveLocation(messageStore, msg.Info.ID, chatJID, sender, content, msg.Info.Timestamp) {
+		return
+	}
 
 	// Extract media info
 	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength := extractMediaInfo(msg.Message)
@@ -1669,6 +1674,7 @@ func extractDirectPathFromURL(url string) string {
 // Start a REST API server to expose the WhatsApp client functionality
 func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int) {
 	registerGroupRoutes(client, messageStore)
+	registerShareRoutes(client, messageStore)
 
 	// Handler for sending messages
 	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
@@ -2289,14 +2295,8 @@ func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, his
 				}
 
 				// Extract text content
-				var content string
-				if msg.Message.Message != nil {
-					if conv := msg.Message.Message.GetConversation(); conv != "" {
-						content = conv
-					} else if ext := msg.Message.Message.GetExtendedTextMessage(); ext != nil {
-						content = ext.GetText()
-					}
-				}
+				// Same extraction as live messages: text, captions, Pix cards, contacts, locations
+				content := extractTextContent(msg.Message.Message)
 
 				// Extract media info
 				var mediaType, filename, url string

@@ -43,7 +43,8 @@ from whatsapp import (
     create_group as whatsapp_create_group,
     update_group_settings as whatsapp_update_group_settings,
     update_group_members as whatsapp_update_group_members,
-    group_info as whatsapp_group_info
+    group_info as whatsapp_group_info,
+    send_contact as whatsapp_send_contact
 )
 
 # Initialize FastMCP server
@@ -306,6 +307,21 @@ def send_reaction(chat_jid: str, message_id: str, emoji: str) -> Dict[str, Any]:
         emoji: A single emoji, e.g. "👍", "❤️", "😂", "🙏"; "" removes the reaction
     """
     success, status_message = whatsapp_send_reaction(chat_jid, message_id, emoji)
+    return {"success": success, "message": status_message}
+
+@mcp.tool()
+def send_contact(recipient: str, contacts: List[Dict[str, Any]], reply_to: Optional[str] = None) -> Dict[str, Any]:
+    """Send one or more contact cards (vCard), like "Share contact" in WhatsApp: the recipient sees the card with
+    "Message" / "Add contact" buttons. Received contact cards show up in list_messages as "[CONTATO] ...".
+
+    Args:
+        recipient: Phone with country code (digits only) or a JID (person "...@s.whatsapp.net" or group "...@g.us")
+        contacts: List of contacts, each {"name": "Maria Silva", "phones": ["5527999999999"], optional
+                  "emails": ["maria@empresa.com"], "company": "Empresa", "title": "Compras", "note": "..."}
+                  Phones: digits with country code (each becomes a WhatsApp-linked number on the card)
+        reply_to: Optional message ID to reply to (quoted above), from list_messages
+    """
+    success, status_message = whatsapp_send_contact(recipient, contacts, reply_to)
     return {"success": success, "message": status_message}
 
 @mcp.tool()

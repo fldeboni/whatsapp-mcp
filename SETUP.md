@@ -52,7 +52,7 @@ Leitura liberada, envio sempre perguntando — qualquer contato pode mandar text
     "mcp__whatsapp__mark_chats_as_read", "mcp__whatsapp__request_chat_history",
     "mcp__whatsapp__backfill_chat_history", "mcp__whatsapp__backfill_status", "mcp__whatsapp__get_message_status", "mcp__whatsapp__get_group_info"
   ],
-  "ask": ["mcp__whatsapp__send_message", "mcp__whatsapp__send_file", "mcp__whatsapp__send_audio_message", "mcp__whatsapp__send_reaction", "mcp__whatsapp__save_contact", "mcp__whatsapp__create_group", "mcp__whatsapp__update_group_settings", "mcp__whatsapp__update_group_members"]
+  "ask": ["mcp__whatsapp__send_message", "mcp__whatsapp__send_file", "mcp__whatsapp__send_audio_message", "mcp__whatsapp__send_reaction", "mcp__whatsapp__save_contact", "mcp__whatsapp__send_contact", "mcp__whatsapp__create_group", "mcp__whatsapp__update_group_settings", "mcp__whatsapp__update_group_members"]
 }
 ```
 
