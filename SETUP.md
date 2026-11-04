@@ -62,6 +62,11 @@ Leitura liberada, envio sempre perguntando — qualquer contato pode mandar text
 - Subir em segundo plano: `powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File .\start-bridge.ps1 -Log`
 - Para subir sozinho no logon: tarefa agendada (gatilho "Ao fazer logon") ou atalho na pasta Inicializar com o comando acima. Em máquinas corporativas a tarefa agendada pode ser bloqueada por política.
 - Re-parear do zero: parar o bridge, apagar `%USERPROFILE%\.whatsapp-mcp\store\whatsapp.db`, rodar `start-bridge.ps1`.
+- **WhatsApp desconectou o aparelho** (`device_removed` no log): o bridge reinicia sozinho em modo de pareamento. Longe do
+  notebook, grave o número (DDI+DDD+número) em `%USERPROFILE%\.whatsapp-mcp\pair-phone.txt` e reinicie o bridge: o código
+  de 8 letras aparece em `%USERPROFILE%\.whatsapp-mcp\pairing.txt` (e chega notificação no celular). No celular:
+  Aparelhos conectados > Conectar aparelho > "Conectar com número de telefone". Sem o número, o QR fica em `pairing-qr.png`.
+  Código vence em poucos minutos; reiniciar o bridge gera outro. Depois de pareado o arquivo do número é apagado.
 - A sessão aparece em "Aparelhos conectados" no celular; dá pra desconectar por lá a qualquer momento.
 
 ## Rebuild manual

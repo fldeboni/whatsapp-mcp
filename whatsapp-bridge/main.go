@@ -2091,6 +2091,9 @@ func main() {
 
 		case *events.LoggedOut:
 			logger.Warnf("Device logged out, please scan QR code to log in again")
+			// Exit so start-bridge.ps1 restarts the bridge in pairing mode (QR/code) instead of idling offline.
+			writePairStatus("Aparelho desconectado pelo WhatsApp. Reiniciando em modo de pareamento.")
+			go func() { time.Sleep(3 * time.Second); os.Exit(3) }()
 		}
 	})
 
@@ -2107,12 +2110,15 @@ func main() {
 			return
 		}
 
-		// Print QR code for pairing with phone
+		// Print QR code for pairing with phone (also saved as PNG, or a pairing code when pair-phone.txt exists)
+		codeRequested := false
 		for evt := range qrChan {
 			if evt.Event == "code" {
 				fmt.Println("\nScan this QR code with your WhatsApp app:")
 				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+				onPairQR(client, evt.Code, &codeRequested)
 			} else if evt.Event == "success" {
+				onPaired()
 				connected <- true
 				break
 			}
