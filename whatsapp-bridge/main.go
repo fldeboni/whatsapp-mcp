@@ -381,6 +381,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 	}
 
 	msg := &waProto.Message{}
+	sendNote := ""
 
 	// Check if we have media to send
 	if mediaPath != "" {
@@ -423,7 +424,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 		case "avi":
 			mediaType = whatsmeow.MediaVideo
 			mimeType = "video/avi"
-		case "mov":
+		case "mov", "m4v", "mkv", "webm", "3gp":
 			mediaType = whatsmeow.MediaVideo
 			mimeType = "video/quicktime"
 
@@ -437,6 +438,16 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 		default:
 			mediaType = whatsmeow.MediaDocument
 			mimeType = "application/octet-stream"
+		}
+
+		var vinfo videoInfo
+		if mediaType == whatsmeow.MediaVideo {
+			var note string
+			mediaData, vinfo, note = prepareVideo(mediaPath, mediaData)
+			sendNote += note
+			if strings.HasPrefix(note, " (convertido") {
+				mimeType = "video/mp4"
+			}
 		}
 
 		// Upload media to WhatsApp servers
@@ -507,12 +518,20 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				Caption:       proto.String(caption),
 				ContextInfo:   mediaCtx,
 				Mimetype:      proto.String(mimeType),
+				JPEGThumbnail: vinfo.Thumbnail,
 				URL:           &resp.URL,
 				DirectPath:    &resp.DirectPath,
 				MediaKey:      resp.MediaKey,
 				FileEncSHA256: resp.FileEncSHA256,
 				FileSHA256:    resp.FileSHA256,
 				FileLength:    &resp.FileLength,
+			}
+			if vinfo.Seconds > 0 {
+				msg.VideoMessage.Seconds = proto.Uint32(vinfo.Seconds)
+			}
+			if vinfo.Width > 0 && vinfo.Height > 0 {
+				msg.VideoMessage.Width = proto.Uint32(vinfo.Width)
+				msg.VideoMessage.Height = proto.Uint32(vinfo.Height)
 			}
 		case whatsmeow.MediaDocument:
 			// Base name only: the full local path (user name, folders) must not leak to the recipient.
@@ -553,7 +572,7 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 		return false, fmt.Sprintf("Error sending message: %v", err)
 	}
 
-	return true, fmt.Sprintf("Message sent to %s", recipient)
+	return true, fmt.Sprintf("Message sent to %s%s", recipient, sendNote)
 }
 
 // Extract media info from a message

@@ -227,7 +227,10 @@ def send_file(recipient: str, media_path: str, caption: str = "", reply_to: Opti
     Args:
         recipient: The recipient - either a phone number with country code but no + or other symbols,
                  or a JID (e.g., "123456789@s.whatsapp.net" or a group JID like "123456789@g.us")
-        media_path: The absolute path to the media file to send (image, video, document)
+        media_path: The absolute path to the media file to send (image, video, document). Videos (.mp4, .mov,
+                 .m4v, .mkv, .webm, .3gp, .avi) go with thumbnail and duration; if they would not play on every
+                 phone (HEVC, AVI...) or pass 60 MB the bridge converts/compresses them to MP4 H.264 (needs
+                 ffmpeg) and the result says so.
         caption: Optional text shown with the image/video/document (the "legenda"). Mentions work like in
                  send_message: "@" + phone with country code (e.g. "@5527999999999") in a group.
         reply_to: Optional message ID to reply to (quoted above), from list_messages.
