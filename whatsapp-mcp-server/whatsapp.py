@@ -107,10 +107,10 @@ def _edit_delete_marks(message_id: str, chat_jid: str) -> str:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         try:
             try:
-                row = conn.execute('SELECT deleted_at, edited_at, original_content, deleted_for_me_at, starred_at FROM messages '
+                row = conn.execute('SELECT deleted_at, edited_at, original_content, deleted_for_me_at, starred_at, pinned_until FROM messages '
                                    'WHERE id = ? AND chat_jid = ?', (message_id, chat_jid)).fetchone()
             except sqlite3.Error:  # bridge not yet restarted with the deleted_for_me_at column
-                row = conn.execute('SELECT deleted_at, edited_at, original_content, NULL, NULL FROM messages '
+                row = conn.execute('SELECT deleted_at, edited_at, original_content, NULL, NULL, NULL FROM messages '
                                    'WHERE id = ? AND chat_jid = ?', (message_id, chat_jid)).fetchone()
         finally:
             conn.close()
@@ -118,8 +118,15 @@ def _edit_delete_marks(message_id: str, chat_jid: str) -> str:
         return ''  # old database without the columns
     if not row:
         return ''
-    deleted_at, edited_at, original, deleted_for_me_at, starred_at = row
+    deleted_at, edited_at, original, deleted_for_me_at, starred_at, pinned_until = row
     marks = '[FAVORITA] ' if starred_at else ''
+    if pinned_until:
+        try:
+            until = datetime.fromisoformat(str(pinned_until))
+            if until > datetime.now(until.tzinfo):
+                marks += f'[FIXADA até {until.astimezone().strftime("%d/%m %H:%M")}] '
+        except ValueError:
+            pass
     if deleted_at:
         marks += f'[APAGADA PELO REMETENTE em {str(deleted_at)[:16]}] '
     if deleted_for_me_at:
@@ -804,6 +811,18 @@ def star_messages(chat_jid: str, message_ids: list, starred: bool = True) -> Tup
     try:
         response = requests.post(f"{WHATSAPP_API_BASE_URL}/star",
                                  json={"chat_jid": chat_jid, "message_ids": list(message_ids), "starred": starred},
+                                 timeout=60)
+        result = response.json()
+        return result.get("success", False), result.get("message", f"HTTP {response.status_code}")
+    except requests.RequestException as e:
+        return False, f"Bridge not reachable (is whatsapp-bridge running?): {e}"
+    except ValueError:
+        return False, f"HTTP {response.status_code} - {response.text[:300]}"
+
+def pin_message(chat_jid: str, message_id: str, pin: bool = True, duration: str = "7d") -> Tuple[bool, str]:
+    try:
+        response = requests.post(f"{WHATSAPP_API_BASE_URL}/pin",
+                                 json={"chat_jid": chat_jid, "message_id": message_id, "pin": pin, "duration": duration},
                                  timeout=60)
         result = response.json()
         return result.get("success", False), result.get("message", f"HTTP {response.status_code}")

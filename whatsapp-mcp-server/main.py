@@ -41,6 +41,7 @@ from whatsapp import (
     send_reaction as whatsapp_send_reaction,
     delete_messages as whatsapp_delete_messages,
     star_messages as whatsapp_star_messages,
+    pin_message as whatsapp_pin_message,
     save_contact as whatsapp_save_contact,
     create_group as whatsapp_create_group,
     update_group_settings as whatsapp_update_group_settings,
@@ -347,6 +348,22 @@ def star_message(chat_jid: str, message_ids: List[str], starred: bool = True) ->
         starred: True to star (default), False to remove the star
     """
     success, status_message = whatsapp_star_messages(chat_jid, message_ids, starred)
+    return {"success": success, "message": status_message}
+
+@mcp.tool()
+def pin_message(chat_jid: str, message_id: str, pin: bool = True, duration: str = "7d") -> Dict[str, Any]:
+    """Pin ("Fixar") or unpin a message at the top of a chat. EVERYONE in the chat sees it (and gets a notice
+    "X fixou uma mensagem"), so show the user the chat and the message text and wait for the ok first.
+    WhatsApp keeps at most 3 pinned per chat (a 4th replaces the oldest). In groups where only admins edit the
+    group info, only admins can pin. Pinned messages show [FIXADA até dd/mm hh:mm] in list_messages.
+
+    Args:
+        chat_jid: Chat JID (phone@s.whatsapp.net or ...@g.us)
+        message_id: Message ID from list_messages
+        pin: True pins, False unpins
+        duration: "24h", "7d" (default) or "30d" — how long it stays pinned (ignored when unpinning)
+    """
+    success, status_message = whatsapp_pin_message(chat_jid, message_id, pin, duration)
     return {"success": success, "message": status_message}
 
 @mcp.tool()

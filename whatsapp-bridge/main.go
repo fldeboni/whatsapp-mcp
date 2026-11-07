@@ -148,6 +148,7 @@ func NewMessageStore() (*MessageStore, error) {
 	// "Apagar para mim" (here or on the phone): content kept, flagged.
 	db.Exec(`ALTER TABLE messages ADD COLUMN deleted_for_me_at TIMESTAMP`)
 	db.Exec(`ALTER TABLE messages ADD COLUMN starred_at TIMESTAMP`)
+	db.Exec(`ALTER TABLE messages ADD COLUMN pinned_until TIMESTAMP`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS read_marks (chat_jid TEXT PRIMARY KEY, marked_until TIMESTAMP)`)
 	// Delivery/read/played receipts for messages WE sent, one row per recipient (groups have many)
 	db.Exec(`CREATE TABLE IF NOT EXISTS message_receipts (message_id TEXT, chat_jid TEXT, recipient TEXT,
@@ -748,6 +749,10 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 	// A reaction arrives as its own message pointing at the reacted one; store it against that message.
 	// HD original of a photo/video already stored as its SD preview: repoint the stored media, no new row.
 	if handleHDChild(messageStore, chatJID, msg.Message) {
+		return
+	}
+	// Pin/unpin of a message (by anyone): mark the pinned message, no new row.
+	if handlePinMessage(messageStore, chatJID, msg.Message, msg.Info.Timestamp) {
 		return
 	}
 
@@ -1749,6 +1754,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 	registerShareRoutes(client, messageStore)
 	registerDeleteRoutes(client, messageStore)
 	registerStarRoutes(client, messageStore)
+	registerPinRoutes(client, messageStore)
 
 	// Handler for sending messages
 	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
