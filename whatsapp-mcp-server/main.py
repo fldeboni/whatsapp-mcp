@@ -39,6 +39,8 @@ from whatsapp import (
     backfill_status as whatsapp_backfill_status,
     message_status as whatsapp_message_status,
     send_reaction as whatsapp_send_reaction,
+    delete_messages as whatsapp_delete_messages,
+    star_messages as whatsapp_star_messages,
     save_contact as whatsapp_save_contact,
     create_group as whatsapp_create_group,
     update_group_settings as whatsapp_update_group_settings,
@@ -310,6 +312,36 @@ def send_reaction(chat_jid: str, message_id: str, emoji: str) -> Dict[str, Any]:
         emoji: A single emoji, e.g. "👍", "❤️", "😂", "🙏"; "" removes the reaction
     """
     success, status_message = whatsapp_send_reaction(chat_jid, message_id, emoji)
+    return {"success": success, "message": status_message}
+
+@mcp.tool()
+def delete_message(chat_jid: str, message_ids: List[str], scope: str) -> Dict[str, Any]:
+    """Delete one or more messages of ONE chat, like the phone does. Always confirm with the user first, showing
+    the chat and the text of each message that will be deleted. Get IDs from list_messages ("Message ID: ...").
+
+    Args:
+        chat_jid: The chat JID (person "...@s.whatsapp.net" or group "...@g.us")
+        message_ids: IDs of the messages to delete (several at once is fine, e.g. for a cleanup)
+        scope: "everyone" = "Apagar para todos" (my own messages up to ~60 h after sending; other people's messages
+               only in a group where I am admin; everyone sees "Mensagem apagada").
+               "me" = "Apagar para mim" (any message, any age; disappears only from my phone/devices, nobody is
+               notified).
+    The local copy keeps the text: list_messages shows [APAGADA PELO REMETENTE ...] / [APAGADA SÓ PARA MIM ...].
+    """
+    success, status_message = whatsapp_delete_messages(chat_jid, message_ids, scope)
+    return {"success": success, "message": status_message}
+
+@mcp.tool()
+def star_message(chat_jid: str, message_ids: List[str], starred: bool = True) -> Dict[str, Any]:
+    """Star ("Favoritar") or unstar messages of ONE chat. Only for me: syncs to "Mensagens favoritas" on the
+    phone, nobody else sees it. Starred messages show [FAVORITA] in list_messages. IDs come from list_messages.
+
+    Args:
+        chat_jid: The chat JID (person "...@s.whatsapp.net" or group "...@g.us")
+        message_ids: IDs of the messages (several at once is fine)
+        starred: True to star (default), False to remove the star
+    """
+    success, status_message = whatsapp_star_messages(chat_jid, message_ids, starred)
     return {"success": success, "message": status_message}
 
 @mcp.tool()

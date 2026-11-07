@@ -33,6 +33,7 @@ Conecta o WhatsApp **pessoal** ao Claude via whatsmeow (protocolo não oficial �
 
 12. **Busca de contatos na agenda**: `search_contacts` procura nas conversas E na agenda do WhatsApp (`whatsmeow_contacts`, código LID convertido para número), sem diferenciar acentos (`list_chats` também). Conversas gravadas só com o número ganham nome: o bridge tenta de novo a agenda, e `fix_chat_names.py` corrige o banco (rodado pelo `update.ps1`).
 13. **`request_chat_history`**: busca no celular mensagens antigas de uma conversa (até 50 por vez); `backfill_chat_history` puxa o histórico inteiro em segundo plano até uma data (`backfill_status` mostra o andamento). **Mensagens interativas** (cartão de chave Pix etc.) são gravadas como texto.
+15. **Apagar e favoritar** (`delete.go`, `star.go`): `delete_message` apaga para todos (revoke; ~60 h para as minhas, admin apaga as dos outros em grupo) ou só para mim (app state `regular_high`, `deleteMessageForMe` v3); `star_message` favorita (`star` v2). A store guarda o texto e marca `deleted_at` / `deleted_for_me_at` / `starred_at` (também quando feito no celular). Patch de app state com 409/LTHash refaz o fetch completo e tenta de novo uma vez.
 14. Aparelho aparece como **"Claude (WhatsApp MCP)"**, tipo computador, em Aparelhos conectados (vale para pareamentos novos).
 
 ## Atualização
@@ -50,9 +51,9 @@ Leitura liberada, envio sempre perguntando — qualquer contato pode mandar text
     "mcp__whatsapp__get_chat", "mcp__whatsapp__get_direct_chat_by_contact", "mcp__whatsapp__get_contact_chats",
     "mcp__whatsapp__get_last_interaction", "mcp__whatsapp__get_message_context", "mcp__whatsapp__download_media",
     "mcp__whatsapp__mark_chats_as_read", "mcp__whatsapp__request_chat_history",
-    "mcp__whatsapp__backfill_chat_history", "mcp__whatsapp__backfill_status", "mcp__whatsapp__get_message_status", "mcp__whatsapp__get_group_info"
+    "mcp__whatsapp__backfill_chat_history", "mcp__whatsapp__backfill_status", "mcp__whatsapp__get_message_status", "mcp__whatsapp__get_group_info", "mcp__whatsapp__star_message"
   ],
-  "ask": ["mcp__whatsapp__send_message", "mcp__whatsapp__send_file", "mcp__whatsapp__send_audio_message", "mcp__whatsapp__send_reaction", "mcp__whatsapp__save_contact", "mcp__whatsapp__send_contact", "mcp__whatsapp__create_group", "mcp__whatsapp__update_group_settings", "mcp__whatsapp__update_group_members"]
+  "ask": ["mcp__whatsapp__send_message", "mcp__whatsapp__send_file", "mcp__whatsapp__send_audio_message", "mcp__whatsapp__send_reaction", "mcp__whatsapp__delete_message", "mcp__whatsapp__save_contact", "mcp__whatsapp__send_contact", "mcp__whatsapp__create_group", "mcp__whatsapp__update_group_settings", "mcp__whatsapp__update_group_members"]
 }
 ```
 

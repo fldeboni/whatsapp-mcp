@@ -144,6 +144,9 @@ func NewMessageStore() (*MessageStore, error) {
 	db.Exec(`ALTER TABLE messages ADD COLUMN original_content TEXT`)
 	db.Exec(`ALTER TABLE messages ADD COLUMN edited_at TIMESTAMP`)
 	db.Exec(`ALTER TABLE messages ADD COLUMN deleted_at TIMESTAMP`)
+	// "Apagar para mim" (here or on the phone): content kept, flagged.
+	db.Exec(`ALTER TABLE messages ADD COLUMN deleted_for_me_at TIMESTAMP`)
+	db.Exec(`ALTER TABLE messages ADD COLUMN starred_at TIMESTAMP`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS read_marks (chat_jid TEXT PRIMARY KEY, marked_until TIMESTAMP)`)
 	// Delivery/read/played receipts for messages WE sent, one row per recipient (groups have many)
 	db.Exec(`CREATE TABLE IF NOT EXISTS message_receipts (message_id TEXT, chat_jid TEXT, recipient TEXT,
@@ -1694,6 +1697,8 @@ func extractDirectPathFromURL(url string) string {
 func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int) {
 	registerGroupRoutes(client, messageStore)
 	registerShareRoutes(client, messageStore)
+	registerDeleteRoutes(client, messageStore)
+	registerStarRoutes(client, messageStore)
 
 	// Handler for sending messages
 	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
@@ -2057,6 +2062,12 @@ func main() {
 
 		case *events.MediaRetry:
 			handleMediaRetry(v)
+
+		case *events.DeleteForMe:
+			handleDeleteForMe(messageStore, v)
+
+		case *events.Star:
+			handleStar(messageStore, v)
 
 		case *events.Receipt:
 			handleReceipt(client, messageStore, v)

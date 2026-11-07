@@ -106,18 +106,24 @@ def _edit_delete_marks(message_id: str, chat_jid: str) -> str:
     try:
         conn = sqlite3.connect(MESSAGES_DB_PATH)
         try:
-            row = conn.execute('SELECT deleted_at, edited_at, original_content FROM messages WHERE id = ? AND chat_jid = ?',
-                               (message_id, chat_jid)).fetchone()
+            try:
+                row = conn.execute('SELECT deleted_at, edited_at, original_content, deleted_for_me_at, starred_at FROM messages '
+                                   'WHERE id = ? AND chat_jid = ?', (message_id, chat_jid)).fetchone()
+            except sqlite3.Error:  # bridge not yet restarted with the deleted_for_me_at column
+                row = conn.execute('SELECT deleted_at, edited_at, original_content, NULL, NULL FROM messages '
+                                   'WHERE id = ? AND chat_jid = ?', (message_id, chat_jid)).fetchone()
         finally:
             conn.close()
     except sqlite3.Error:
         return ''  # old database without the columns
     if not row:
         return ''
-    deleted_at, edited_at, original = row
-    marks = ''
+    deleted_at, edited_at, original, deleted_for_me_at, starred_at = row
+    marks = '[FAVORITA] ' if starred_at else ''
     if deleted_at:
         marks += f'[APAGADA PELO REMETENTE em {str(deleted_at)[:16]}] '
+    if deleted_for_me_at:
+        marks += f'[APAGADA SÓ PARA MIM em {str(deleted_for_me_at)[:16]}] '
     if edited_at:
         orig = (original or '').replace('\n', ' / ')
         marks += f'[EDITADA em {str(edited_at)[:16]} | original: "{orig[:300]}"] '
@@ -775,6 +781,30 @@ def send_reaction(chat_jid: str, message_id: str, emoji: str) -> Tuple[bool, str
     try:
         response = requests.post(f"{WHATSAPP_API_BASE_URL}/react",
                                  json={"chat_jid": chat_jid, "message_id": message_id, "emoji": emoji}, timeout=30)
+        result = response.json()
+        return result.get("success", False), result.get("message", f"HTTP {response.status_code}")
+    except requests.RequestException as e:
+        return False, f"Bridge not reachable (is whatsapp-bridge running?): {e}"
+    except ValueError:
+        return False, f"HTTP {response.status_code} - {response.text[:300]}"
+
+def delete_messages(chat_jid: str, message_ids: list, scope: str) -> Tuple[bool, str]:
+    try:
+        response = requests.post(f"{WHATSAPP_API_BASE_URL}/delete",
+                                 json={"chat_jid": chat_jid, "message_ids": list(message_ids), "scope": scope},
+                                 timeout=60 + 5 * len(message_ids))
+        result = response.json()
+        return result.get("success", False), result.get("message", f"HTTP {response.status_code}")
+    except requests.RequestException as e:
+        return False, f"Bridge not reachable (is whatsapp-bridge running?): {e}"
+    except ValueError:
+        return False, f"HTTP {response.status_code} - {response.text[:300]}"
+
+def star_messages(chat_jid: str, message_ids: list, starred: bool = True) -> Tuple[bool, str]:
+    try:
+        response = requests.post(f"{WHATSAPP_API_BASE_URL}/star",
+                                 json={"chat_jid": chat_jid, "message_ids": list(message_ids), "starred": starred},
+                                 timeout=60)
         result = response.json()
         return result.get("success", False), result.get("message", f"HTTP {response.status_code}")
     except requests.RequestException as e:
