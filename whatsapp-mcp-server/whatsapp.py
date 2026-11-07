@@ -833,7 +833,8 @@ def mark_chat_as_read(chat_jid: str) -> Tuple[bool, str]:
     except requests.RequestException as e:
         return False, f"Request error: {str(e)}"
 
-def send_file(recipient: str, media_path: str, caption: str = "", reply_to: Optional[str] = None) -> Tuple[bool, str]:
+def send_file(recipient: str, media_path: str, caption: str = "", reply_to: Optional[str] = None,
+              as_document: bool = False, hd: bool = True) -> Tuple[bool, str]:
     try:
         # Validate input
         if not recipient:
@@ -850,6 +851,8 @@ def send_file(recipient: str, media_path: str, caption: str = "", reply_to: Opti
             "recipient": recipient,
             "media_path": media_path,
             "message": caption or "",
+            "as_document": bool(as_document),
+            "hd": bool(hd),
         }
         if reply_to:
             payload["reply_to"] = reply_to

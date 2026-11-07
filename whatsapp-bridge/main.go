@@ -1,6 +1,7 @@
 package main
 
 import (
+	"mime"
 	"context"
 	"database/sql"
 	"encoding/binary"
@@ -354,10 +355,14 @@ type SendMessageRequest struct {
 	Message   string `json:"message"`
 	MediaPath string `json:"media_path,omitempty"`
 	ReplyTo   string `json:"reply_to,omitempty"` // message ID to quote (reply), must be stored in this chat
+	// AsDocument sends any file (photo, video...) as a document: the original bytes, no conversion, up to 2 GB.
+	AsDocument bool `json:"as_document,omitempty"`
+	// HD (default true): photos > 1600 px and videos > 480p go as WhatsApp "HD" (SD preview + original).
+	HD *bool `json:"hd,omitempty"`
 }
 
 // Function to send a WhatsApp message
-func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string, reply *waProto.ContextInfo) (bool, string) {
+func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string, reply *waProto.ContextInfo, asDocument, hd bool) (bool, string) {
 	if !client.IsConnected() {
 		return false, "Not connected to WhatsApp"
 	}
@@ -442,6 +447,20 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 			mediaType = whatsmeow.MediaDocument
 			mimeType = "application/octet-stream"
 		}
+		if asDocument {
+			// Original file untouched; the recipient taps to open it. Real MIME so the phone opens it in the right app.
+			mediaType = whatsmeow.MediaDocument
+			if mt := mime.TypeByExtension("." + fileExt); mt != "" {
+				mimeType = mt
+			} else if mimeType == "audio/ogg; codecs=opus" {
+				mimeType = "audio/ogg"
+			} else if mimeType == "" {
+				mimeType = "application/octet-stream"
+			}
+			if len(mediaData) > 2000<<20 {
+				return false, "Arquivo maior que 2 GB: o WhatsApp não aceita"
+			}
+		}
 
 		var vinfo videoInfo
 		if mediaType == whatsmeow.MediaVideo {
@@ -450,6 +469,32 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 			sendNote += note
 			if strings.HasPrefix(note, " (convertido") {
 				mimeType = "video/mp4"
+			}
+		}
+
+		// HD ("dual upload"): SD preview + original with the HD badge. Falls back to a normal send when not needed.
+		if hd && !asDocument && (mediaType == whatsmeow.MediaVideo || (mediaType == whatsmeow.MediaImage && (fileExt == "jpg" || fileExt == "jpeg" || fileExt == "png"))) {
+			var sd *sdCopy
+			var hdW, hdH uint32
+			var hdThumb []byte
+			if mediaType == whatsmeow.MediaImage {
+				sd, hdW, hdH, hdThumb = makeSDImage(mediaPath)
+			} else if mimeType == "video/mp4" || fileExt == "mp4" {
+				sd = makeSDVideo(mediaData, vinfo)
+			}
+			if sd != nil {
+				caption, mentioned := buildMentions(client, recipientJID, message)
+				var ctx *waProto.ContextInfo
+				if len(mentioned) > 0 || reply != nil {
+					ctx = reply
+					if ctx == nil {
+						ctx = &waProto.ContextInfo{}
+					}
+					ctx.MentionedJID = mentioned
+				}
+				if ok, note := sendHDPair(client, recipientJID, mediaType, mimeType, mediaData, sd, hdW, hdH, hdThumb, vinfo, caption, ctx); ok {
+					return true, fmt.Sprintf("Message sent to %s%s%s", recipient, sendNote, note)
+				}
 			}
 		}
 
@@ -701,6 +746,11 @@ func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *ev
 	}
 
 	// A reaction arrives as its own message pointing at the reacted one; store it against that message.
+	// HD original of a photo/video already stored as its SD preview: repoint the stored media, no new row.
+	if handleHDChild(messageStore, chatJID, msg.Message) {
+		return
+	}
+
 	if rm := msg.Message.GetReactionMessage(); rm != nil {
 		reactor := sender
 		if msg.Info.IsFromMe {
@@ -1739,7 +1789,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 				return
 			}
 		}
-		success, message := sendWhatsAppMessage(client, req.Recipient, req.Message, req.MediaPath, reply)
+		success, message := sendWhatsAppMessage(client, req.Recipient, req.Message, req.MediaPath, reply, req.AsDocument, req.HD == nil || *req.HD)
 		fmt.Println("Message sent", success, message)
 		// Set response headers
 		w.Header().Set("Content-Type", "application/json")
