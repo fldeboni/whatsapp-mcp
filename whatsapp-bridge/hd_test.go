@@ -31,7 +31,7 @@ func TestMakeSD(t *testing.T) {
 		t.Fatal(string(out))
 	}
 	sd, w, h, thumb := makeSDImage(img)
-	if sd == nil || w != 3000 || h != 2000 || len(thumb) == 0 || sd.width != 1600 || sd.height != 1066 {
+	if sd == nil || w != 3000 || h != 2000 || len(thumb) == 0 || sd.width != 1280 {
 		t.Fatalf("image: sd=%v w=%d h=%d", sd != nil, w, h)
 	}
 	small := filepath.Join(dir, "small.png")

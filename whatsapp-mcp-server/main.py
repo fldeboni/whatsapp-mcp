@@ -239,7 +239,7 @@ def send_file(recipient: str, media_path: str, caption: str = "", reply_to: Opti
         reply_to: Optional message ID to reply to (quoted above), from list_messages.
         as_document: True sends the file as a DOCUMENT: original bytes, no compression/conversion, up to 2 GB
                  (recipient taps to open; no preview in the chat). Use for "mandar como documento" / original quality.
-        hd: Photos (jpg/png > 1600 px) and videos (> 480p) go as WhatsApp HD (badge "HD", original quality) by
+        hd: Photos (jpg/png > 1280 px) and videos (> 480p) go as WhatsApp HD (badge "HD", original quality) by
                  default; False sends them in standard quality only.
     
     Returns:

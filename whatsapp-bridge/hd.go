@@ -17,11 +17,11 @@ import (
 // HD photos/videos, like the phone's "HD" option: WhatsApp does a "dual upload". First an SD copy goes as a normal
 // message flagged SD_*_PARENT (what old phones and slow connections show), then the original goes wrapped in
 // associatedChildMessage, flagged HD_*_CHILD and pointing at the parent. The recipient sees one bubble with the "HD"
-// badge and gets the original when opening it. Only worth it when the original is bigger than SD (photo > 1600 px on
+// badge and gets the original when opening it. Only worth it when the original is bigger than SD (photo > 1280 px on
 // the long side, video > 480p); otherwise a normal send is identical.
 
 const (
-	sdImageLongSide  = 1600
+	sdImageLongSide  = 1280
 	sdVideoShortSide = 480
 )
 
@@ -185,13 +185,16 @@ func sendHDPair(client *whatsmeow.Client, chat types.JID, mediaType whatsmeow.Me
 	if err != nil {
 		return false, ""
 	}
-	child.MessageContextInfo = &waProto.MessageContextInfo{
-		MessageAssociation: &waProto.MessageAssociation{
-			AssociationType:  assoc.Enum(),
-			ParentMessageKey: client.BuildMessageKey(chat, types.EmptyJID, resp.ID),
+	// Same layout as the phone: the association goes on the OUTER message, next to associatedChildMessage.
+	wrapped := &waProto.Message{
+		AssociatedChildMessage: &waProto.FutureProofMessage{Message: child},
+		MessageContextInfo: &waProto.MessageContextInfo{
+			MessageAssociation: &waProto.MessageAssociation{
+				AssociationType:  assoc.Enum(),
+				ParentMessageKey: client.BuildMessageKey(chat, types.EmptyJID, resp.ID),
+			},
 		},
 	}
-	wrapped := &waProto.Message{AssociatedChildMessage: &waProto.FutureProofMessage{Message: child}}
 	if _, err := client.SendMessage(bg, chat, wrapped); err != nil {
 		return true, fmt.Sprintf(" (foi em qualidade normal: a versão HD falhou: %v)", err)
 	}
@@ -205,7 +208,10 @@ func handleHDChild(messageStore *MessageStore, chatJID string, m *waProto.Messag
 	if inner == nil {
 		return false
 	}
-	assoc := inner.GetMessageContextInfo().GetMessageAssociation()
+	assoc := m.GetMessageContextInfo().GetMessageAssociation() // where the phone puts it
+	if assoc == nil {
+		assoc = inner.GetMessageContextInfo().GetMessageAssociation()
+	}
 	t := assoc.GetAssociationType()
 	if t != waProto.MessageAssociation_HD_IMAGE_DUAL_UPLOAD && t != waProto.MessageAssociation_HD_VIDEO_DUAL_UPLOAD {
 		if b, err := protojson.Marshal(m); err == nil {

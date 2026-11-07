@@ -357,7 +357,7 @@ type SendMessageRequest struct {
 	ReplyTo   string `json:"reply_to,omitempty"` // message ID to quote (reply), must be stored in this chat
 	// AsDocument sends any file (photo, video...) as a document: the original bytes, no conversion, up to 2 GB.
 	AsDocument bool `json:"as_document,omitempty"`
-	// HD (default true): photos > 1600 px and videos > 480p go as WhatsApp "HD" (SD preview + original).
+	// HD (default true): photos > 1280 px and videos > 480p go as WhatsApp "HD" (SD preview + original).
 	HD *bool `json:"hd,omitempty"`
 }
 
