@@ -1,7 +1,6 @@
 package main
 
 import (
-	"mime"
 	"context"
 	"database/sql"
 	"encoding/binary"
@@ -10,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"mime"
 	"net/http"
 	"os"
 	"os/signal"
@@ -360,10 +360,12 @@ type SendMessageRequest struct {
 	AsDocument bool `json:"as_document,omitempty"`
 	// HD (default true): photos > 1280 px and videos > 480p go as WhatsApp "HD" (SD preview + original).
 	HD *bool `json:"hd,omitempty"`
+	// LinkPreview (default true): a text with a link goes with the card (title, description, image from og:tags).
+	LinkPreview *bool `json:"link_preview,omitempty"`
 }
 
 // Function to send a WhatsApp message
-func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string, reply *waProto.ContextInfo, asDocument, hd bool) (bool, string) {
+func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message string, mediaPath string, reply *waProto.ContextInfo, asDocument, hd, linkPrev bool) (bool, string) {
 	if !client.IsConnected() {
 		return false, "Not connected to WhatsApp"
 	}
@@ -598,20 +600,28 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 				FileLength:    &resp.FileLength,
 			}
 		}
-	} else if text, mentioned := buildMentions(client, recipientJID, message); len(mentioned) > 0 || reply != nil {
+	} else {
 		// "@<phone>" in a group only becomes a real mention (name highlighted, person notified) when the
 		// message carries the mentioned JIDs; plain text just shows the number. A reply carries the quoted message.
-		ctxInfo := reply
-		if ctxInfo == nil {
-			ctxInfo = &waProto.ContextInfo{}
+		text, mentioned := buildMentions(client, recipientJID, message)
+		ext := &waProto.ExtendedTextMessage{Text: proto.String(text)}
+		hasPreview := linkPrev && applyLinkPreview(client, ext, text)
+		if len(mentioned) > 0 || reply != nil {
+			ctxInfo := reply
+			if ctxInfo == nil {
+				ctxInfo = &waProto.ContextInfo{}
+			}
+			ctxInfo.MentionedJID = mentioned
+			ext.ContextInfo = ctxInfo
 		}
-		ctxInfo.MentionedJID = mentioned
-		msg.ExtendedTextMessage = &waProto.ExtendedTextMessage{
-			Text:        proto.String(text),
-			ContextInfo: ctxInfo,
+		if hasPreview || ext.ContextInfo != nil {
+			msg.ExtendedTextMessage = ext
+			if hasPreview {
+				sendNote += " (com prévia do link)"
+			}
+		} else {
+			msg.Conversation = proto.String(message)
 		}
-	} else {
-		msg.Conversation = proto.String(message)
 	}
 
 	// Send message
@@ -1795,7 +1805,8 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 				return
 			}
 		}
-		success, message := sendWhatsAppMessage(client, req.Recipient, req.Message, req.MediaPath, reply, req.AsDocument, req.HD == nil || *req.HD)
+		success, message := sendWhatsAppMessage(client, req.Recipient, req.Message, req.MediaPath, reply, req.AsDocument, req.HD == nil || *req.HD,
+			req.LinkPreview == nil || *req.LinkPreview)
 		fmt.Println("Message sent", success, message)
 		// Set response headers
 		w.Header().Set("Content-Type", "application/json")

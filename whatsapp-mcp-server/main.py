@@ -193,7 +193,8 @@ def get_message_context(
 def send_message(
     recipient: str,
     message: str,
-    reply_to: Optional[str] = None
+    reply_to: Optional[str] = None,
+    link_preview: bool = True
 ) -> Dict[str, Any]:
     """Send a WhatsApp message to a person or group. For group chats use the JID.
 
@@ -205,7 +206,9 @@ def send_message(
                  person notified). Do not write "@Name".
         reply_to: Optional message ID to REPLY to (quoted above the text, like "Responder" in the app). Get it from
                   list_messages ("Message ID: ..."); the message must belong to the same chat as recipient.
-    
+        link_preview: True (default): a link in the text goes with the preview card (title, description, image from
+                  the page's og:tags), like the app. False sends the plain link.
+
     Returns:
         A dictionary containing success status and a status message
     """
@@ -217,7 +220,7 @@ def send_message(
         }
     
     # Call the whatsapp_send_message function with the unified recipient parameter
-    success, status_message = whatsapp_send_message(recipient, message, reply_to)
+    success, status_message = whatsapp_send_message(recipient, message, reply_to, link_preview)
     return {
         "success": success,
         "message": status_message

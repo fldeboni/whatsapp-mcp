@@ -743,16 +743,18 @@ def get_direct_chat_by_contact(sender_phone_number: str) -> Optional[Chat]:
         if 'conn' in locals():
             conn.close()
 
-def send_message(recipient: str, message: str, reply_to: Optional[str] = None) -> Tuple[bool, str]:
+def send_message(recipient: str, message: str, reply_to: Optional[str] = None,
+                 link_preview: bool = True) -> Tuple[bool, str]:
     try:
         # Validate input
         if not recipient:
             return False, "Recipient must be provided"
-        
+
         url = f"{WHATSAPP_API_BASE_URL}/send"
         payload = {
             "recipient": recipient,
             "message": message,
+            "link_preview": bool(link_preview),
         }
         if reply_to:
             payload["reply_to"] = reply_to
