@@ -13,12 +13,12 @@
 |---|---|---|
 | **Notebook Windows 10/11** | o MCP roda local | — |
 | **Claude com Claude Code** (plano Pro, Max, Team ou Enterprise) | para o Claude executar a instalação e depois usar o WhatsApp | claude.ai → baixar o app desktop (aba *Code*) ou `npm install -g @anthropic-ai/claude-code` |
-| **Conta no GitHub** (grátis) | baixar o código e receber atualizações | github.com/signup |
-| **Acesso ao repositório privado `fldeboni/whatsapp-mcp`** | o código é privado | mande seu **usuário do GitHub** (ou o e-mail da conta) pro Felipe e **aceite o convite antes de começar** — chega por e-mail ou em github.com/notifications; aceite logado na mesma conta que vai usar no notebook |
 | **WhatsApp no celular, por perto** | escanear o QR code (como no WhatsApp Web) | — |
 | **Permissão de administrador no notebook** | alguns instaladores (Git, Go) pedem confirmação do Windows (UAC) | se a máquina for corporativa e bloquear, peça ao TI |
 
-Programas que o Claude vai instalar (via `winget`, se faltarem): **Git**, **GitHub CLI**, **Go**, **uv**, **gcc (WinLibs)**, **ffmpeg** e **Python 3.11+**.
+O código é público (`github.com/fldeboni/whatsapp-mcp`): não precisa de conta nem de login no GitHub.
+
+Programas que o Claude vai instalar (via `winget`, se faltarem): **Git**, **Go**, **uv**, **gcc (WinLibs)**, **ffmpeg** e **Python 3.11+**.
 
 ---
 
@@ -28,7 +28,7 @@ Você vai instalar o WhatsApp MCP no notebook desta pessoa. Regras:
 
 - Trabalhe em PowerShell. Fale com a pessoa em português, em linguagem simples, dizendo o que está fazendo.
 - **Verifique cada etapa antes de seguir** (comando de checagem indicado). Se algo falhar, diagnostique; não pule etapa.
-- **Nunca peça nem digite senhas.** Logins (GitHub) são feitos pela própria pessoa no navegador.
+- **Nunca peça nem digite senhas.**
 - **Nunca coloque sessão ou mensagens do WhatsApp em pasta sincronizada** (OneDrive, Google Drive, Dropbox). Os dados ficam em `%USERPROFILE%\.whatsapp-mcp`; o código pode ficar em qualquer pasta.
 - **Nunca libere as ferramentas de envio** (`send_message`, `send_file`, `send_audio_message`) para rodar sem confirmação. Qualquer contato pode mandar uma mensagem com "instruções" para o Claude; a confirmação antes de enviar é a proteção.
 - Depois de instalar, o PATH só atualiza em processos novos. Use os caminhos completos ou recarregue o PATH:
@@ -37,29 +37,19 @@ Você vai instalar o WhatsApp MCP no notebook desta pessoa. Regras:
 ### Etapa 1 — Conferir o que já existe
 
 ```powershell
-foreach ($c in 'git','gh','go','uv','gcc','ffmpeg','python','claude','winget') { $p = Get-Command $c -ErrorAction SilentlyContinue; "{0,-7} {1}" -f $c, $(if ($p) { $p.Source } else { 'FALTA' }) }
+foreach ($c in 'git','go','uv','gcc','ffmpeg','python','claude','winget') { $p = Get-Command $c -ErrorAction SilentlyContinue; "{0,-7} {1}" -f $c, $(if ($p) { $p.Source } else { 'FALTA' }) }
 ```
 Se `winget` faltar, peça para a pessoa instalar o **App Installer** pela Microsoft Store e pare até ela confirmar.
 `python` apontando para `...\WindowsApps\python.exe` é só o atalho da Store: conta como **faltando**.
 
-### Etapa 2 — Git e GitHub CLI
+### Etapa 2 — Git
 
 ```powershell
 winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements
-winget install -e --id GitHub.cli --accept-source-agreements --accept-package-agreements
 ```
-(só os que faltarem; pode abrir a confirmação do Windows — avise a pessoa). Recarregue o PATH e confira `git --version` e `gh --version`.
+(só se faltar; pode abrir a confirmação do Windows — avise a pessoa). Recarregue o PATH e confira `git --version`.
 
-### Etapa 3 — Login no GitHub e acesso ao repositório
-
-1. Rode `gh auth status`. Se não estiver logado, peça para a pessoa rodar **no terminal dela** (é interativo, abre o navegador):
-   `gh auth login --web --git-protocol https`
-   e espere ela confirmar.
-2. Confira o acesso: `gh repo view fldeboni/whatsapp-mcp --json name`
-   - Se der "Could not resolve to a Repository": ela ainda não tem acesso. Peça o **usuário do GitHub** dela (`gh api user --jq .login`) para mandar ao Felipe, e para **aceitar o convite** (github.com/notifications). Pare até isso estar resolvido.
-3. `gh auth setup-git` (para o `git clone` usar o mesmo login).
-
-### Etapa 4 — Baixar o código
+### Etapa 3 — Baixar o código
 
 Pergunte onde a pessoa quer a pasta (sugira `%USERPROFILE%\whatsapp-mcp`; pasta no OneDrive é aceitável para o **código**).
 ```powershell
@@ -67,7 +57,7 @@ git clone https://github.com/fldeboni/whatsapp-mcp.git "$env:USERPROFILE\whatsap
 ```
 Leia o `LEIA-ME.md` e o `SETUP.md` da pasta: são a referência do projeto.
 
-### Etapa 5 — Rodar o instalador
+### Etapa 4 — Rodar o instalador
 
 Na pasta do projeto:
 ```powershell
@@ -89,7 +79,7 @@ a cada `update.ps1` o bloco é atualizado. Confira que o bloco está lá.
 
 Confira: `claude mcp get whatsapp` deve mostrar o servidor (o status pode aparecer como falha até o bridge estar rodando — normal).
 
-### Etapa 6 — Parear com o WhatsApp (precisa da pessoa)
+### Etapa 5 — Parear com o WhatsApp (precisa da pessoa)
 
 Abra o bridge numa **janela própria** (o QR não aparece bem dentro do Claude):
 ```powershell
@@ -106,7 +96,7 @@ e, depois de 1–2 minutos, que as conversas estão chegando:
 & "$env:USERPROFILE\.whatsapp-mcp\venv\Scripts\python.exe" -c "import sqlite3,os; c=sqlite3.connect(os.path.expandvars(r'%USERPROFILE%\.whatsapp-mcp\store\messages.db')); print(c.execute('select count(*) from chats').fetchone()[0], 'conversas')"
 ```
 
-### Etapa 7 — Permissões no Claude Code
+### Etapa 6 — Permissões no Claude Code
 
 Edite `%USERPROFILE%\.claude\settings.json` **mesclando** (não apague o que já existe) — leitura liberada, envio sempre perguntando:
 ```json
@@ -123,7 +113,7 @@ Edite `%USERPROFILE%\.claude\settings.json` **mesclando** (não apague o que já
 ```
 Se a pessoa usa o Claude Desktop (chat), ele já pede confirmação por ferramenta; só reiniciar o app.
 
-### Etapa 8 — Deixar rodando
+### Etapa 7 — Deixar rodando
 
 O instalador criou o atalho **"WhatsApp MCP Bridge"** na área de trabalho e na pasta Inicializar (sobe sozinho a cada logon).
 Depois do pareamento, peça para a pessoa **fechar a janela do QR** e **dar duplo clique no atalho da área de trabalho**
@@ -133,7 +123,7 @@ Depois do pareamento, peça para a pessoa **fechar a janela do QR** e **dar dupl
 fecha, e o WhatsApp para de funcionar sem ninguém perceber. Confira que subiu: porta 8080 em `127.0.0.1` e o registro
 `%USERPROFILE%\.whatsapp-mcp\logs\start-bridge-launches.log` com "loop iniciado".
 
-### Etapa 9 — Opcional: marcar grupos como lidos automaticamente
+### Etapa 8 — Opcional: marcar grupos como lidos automaticamente
 
 O recurso vem **desligado** (sem o arquivo de configuração, nada é marcado). **Não ative por conta própria nem sugira grupos sem a pessoa pedir**:
 só pergunte se ela quer. Se quiser, ela escolhe os grupos (mostre com `list_chats` ou pelo banco `messages.db` e confirme a lista final com ela), e você cria
@@ -141,7 +131,7 @@ só pergunte se ela quer. Se quiser, ela escolhe os grupos (mostre com `list_cha
 
 **Opcional — não dormir com a tela apagada:** só se o colega pedir, copie `keep-awake.example.json` para `%USERPROFILE%\.whatsapp-mcp\keep-awake.json` (vale só na tomada; a tela continua apagando; fechar a tampa ainda suspende). Não altere o plano de energia do Windows.
 
-### Etapa 10 — Teste final e entrega
+### Etapa 9 — Teste final e entrega
 
 1. Peça para a pessoa abrir uma **conversa nova** no Claude (o MCP só aparece em sessões novas) e testar: *"liste minhas 5 conversas mais recentes do WhatsApp"*.
 2. Explique, em poucas linhas:

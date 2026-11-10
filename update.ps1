@@ -7,7 +7,7 @@ $repo = 'https://github.com/fldeboni/whatsapp-mcp.git'
 
 if (-not (Test-Path (Join-Path $root '.git'))) {
     Write-Host 'Esta pasta veio de um zip, nao de um clone do repositorio.' -ForegroundColor Yellow
-    Write-Host 'Instale uma vez a partir do repositorio (pede login no GitHub na primeira vez):'
+    Write-Host 'Instale uma vez a partir do repositorio (publico, sem login):'
     Write-Host "  git clone $repo"
     Write-Host '  cd whatsapp-mcp'
     Write-Host '  powershell -ExecutionPolicy Bypass -File .\install.ps1 -SkipPair'
@@ -19,14 +19,24 @@ Push-Location $root
 try {
     $before = (git rev-parse HEAD).Trim()
     git pull --ff-only
-    if ($LASTEXITCODE -ne 0) { throw 'git pull falhou (alteracoes locais na pasta?). Rode "git status" para ver.' }
+    if ($LASTEXITCODE -ne 0) {
+        # History was rewritten on the server (e.g. author e-mail changed): with no local edits, just follow it.
+        if (git status --porcelain) { throw 'git pull falhou: ha alteracoes locais na pasta. Rode "git status" para ver.' }
+        Write-Host 'O historico do repositorio foi reescrito no servidor; alinhando esta pasta com ele.' -ForegroundColor Yellow
+        git fetch origin
+        git reset --hard '@{u}'
+        if ($LASTEXITCODE -ne 0) { throw 'Nao consegui alinhar com o repositorio. Rode "git status" para ver.' }
+        $before = ''
+    }
     $after = (git rev-parse HEAD).Trim()
 } finally { Pop-Location }
 
 if ($before -eq $after) { Write-Host 'Ja esta na versao mais nova.' -ForegroundColor Green; exit 0 }
 
-Write-Host "`nNovidades:" -ForegroundColor Cyan
-git -C $root log --format='  - %s' "$before..$after"
+if ($before) {
+    Write-Host "`nNovidades:" -ForegroundColor Cyan
+    git -C $root log --format='  - %s' "$before..$after"
+}
 
 # Recompila e reinstala sem pedir QR (a sessao continua valendo); o install para o bridge antes de compilar.
 & (Join-Path $root 'install.ps1') -SkipPrereqs -SkipPair

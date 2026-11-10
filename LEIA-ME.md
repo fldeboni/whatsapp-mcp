@@ -7,10 +7,9 @@ Tudo roda local: suas conversas ficam em `%USERPROFILE%\.whatsapp-mcp` e não v�
 
 **Jeito mais fácil:** entregue o arquivo `INSTALAR-COM-CLAUDE.md` ao seu Claude Code e peça para ele seguir. Ele lista as contas e programas necessários e faz a instalação por você. O passo a passo manual está abaixo.
 
-Você precisa de acesso ao repositório privado `fldeboni/whatsapp-mcp` (peça ao Felipe para te adicionar pelo seu usuário do GitHub)
-e do Git (se não tiver: `winget install -e --id Git.Git`, depois feche e abra o PowerShell).
+O código é público (não precisa de conta no GitHub). Você só precisa do Git (se não tiver: `winget install -e --id Git.Git`, depois feche e abra o PowerShell).
 
-1. Baixe o projeto (na primeira vez abre o login do GitHub no navegador):
+1. Baixe o projeto:
    ```
    git clone https://github.com/fldeboni/whatsapp-mcp.git
    cd whatsapp-mcp

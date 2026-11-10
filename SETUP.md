@@ -41,7 +41,7 @@ Conecta o WhatsApp **pessoal** ao Claude via whatsmeow (protocolo não oficial �
 
 ## Atualização
 
-Repositório privado `fldeboni/whatsapp-mcp` (remote `origin`; o projeto original fica como `upstream`). `update.ps1` faz `git pull --ff-only`, mostra os commits novos e roda `install.ps1 -SkipPrereqs -SkipPair`.
+Repositório público `fldeboni/whatsapp-mcp` (sem colaboradores) (remote `origin`; o projeto original fica como `upstream`). `update.ps1` faz `git pull --ff-only`, mostra os commits novos e roda `install.ps1 -SkipPrereqs -SkipPair`.
 
 ## Permissões sugeridas no Claude Code (`~/.claude/settings.json`)
 
