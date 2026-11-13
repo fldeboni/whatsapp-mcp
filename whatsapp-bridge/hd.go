@@ -185,6 +185,7 @@ func sendHDPair(client *whatsmeow.Client, chat types.JID, mediaType whatsmeow.Me
 	if err != nil {
 		return false, ""
 	}
+	storeSent(client, chat, parent, resp)
 	// Same layout as the phone: the association goes on the OUTER message, next to associatedChildMessage.
 	wrapped := &waProto.Message{
 		AssociatedChildMessage: &waProto.FutureProofMessage{Message: child},
@@ -196,9 +197,10 @@ func sendHDPair(client *whatsmeow.Client, chat types.JID, mediaType whatsmeow.Me
 		},
 	}
 	if _, err := client.SendMessage(bg, chat, wrapped); err != nil {
-		return true, fmt.Sprintf(" (foi em qualidade normal: a versão HD falhou: %v)", err)
+		return true, fmt.Sprintf(" (foi em qualidade normal: a versão HD falhou: %v; ID %s)", err, resp.ID)
 	}
-	return true, fmt.Sprintf(" (HD: %.1f MB, prévia SD %.1f MB)", float64(len(hd))/(1<<20), float64(len(sd.data))/(1<<20))
+	handleHDChild(sentStore, chat.String(), wrapped)
+	return true, fmt.Sprintf(" (HD: %.1f MB, prévia SD %.1f MB; ID %s)", float64(len(hd))/(1<<20), float64(len(sd.data))/(1<<20), resp.ID)
 }
 
 // handleHDChild: an HD original arrived (ours or someone's) for an SD message already stored. Point the stored row to

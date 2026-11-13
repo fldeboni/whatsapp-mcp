@@ -625,13 +625,15 @@ func sendWhatsAppMessage(client *whatsmeow.Client, recipient string, message str
 	}
 
 	// Send message
-	_, err = client.SendMessage(context.Background(), recipientJID, msg)
+	resp, err := client.SendMessage(context.Background(), recipientJID, msg)
 
 	if err != nil {
 		return false, fmt.Sprintf("Error sending message: %v", err)
 	}
 
-	return true, fmt.Sprintf("Message sent to %s%s", recipient, sendNote)
+	storeSent(client, recipientJID, msg, resp)
+
+	return true, fmt.Sprintf("Message sent to %s%s (ID %s)", recipient, sendNote, resp.ID)
 }
 
 // Extract media info from a message
@@ -727,6 +729,25 @@ func storeReaction(messageStore *MessageStore, messageID, chatJID, reactor strin
 		VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(message_id, chat_jid, reactor) DO UPDATE SET emoji = excluded.emoji,
 		reacted_at = excluded.reacted_at WHERE excluded.reacted_at >= message_reactions.reacted_at`,
 		messageID, chatJID, reactor, fromMe, emoji, at)
+}
+
+// sentStore is the store used to record what the bridge itself sends (set when the REST server starts).
+var sentStore *MessageStore
+
+// storeSent records a message the bridge just sent. WhatsApp does not echo a message back to the device that sent it,
+// so without this it never shows up in list_messages and cannot be found to delete, pin, star or reply to.
+func storeSent(client *whatsmeow.Client, chat types.JID, msg *waProto.Message, resp whatsmeow.SendResponse) {
+	if sentStore == nil || client.Store.ID == nil {
+		return
+	}
+	evt := &events.Message{Message: msg}
+	evt.Info.ID = resp.ID
+	evt.Info.Timestamp = resp.Timestamp
+	evt.Info.Chat = chat
+	evt.Info.Sender = client.Store.ID.ToNonAD()
+	evt.Info.IsFromMe = true
+	evt.Info.IsGroup = chat.Server == types.GroupServer
+	handleMessage(client, sentStore, evt, waLog.Noop)
 }
 
 func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *events.Message, logger waLog.Logger) {
@@ -1760,6 +1781,7 @@ func extractDirectPathFromURL(url string) string {
 
 // Start a REST API server to expose the WhatsApp client functionality
 func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int) {
+	sentStore = messageStore
 	registerGroupRoutes(client, messageStore)
 	registerShareRoutes(client, messageStore)
 	registerDeleteRoutes(client, messageStore)

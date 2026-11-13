@@ -210,9 +210,11 @@ func sendContacts(client *whatsmeow.Client, recipient string, contacts []sharedC
 		msg.ContactsArrayMessage = &waProto.ContactsArrayMessage{
 			DisplayName: proto.String(fmt.Sprintf("%d contatos", len(contacts))), Contacts: cards, ContextInfo: reply}
 	}
-	if _, err := client.SendMessage(context.Background(), to, msg); err != nil {
+	resp, err := client.SendMessage(context.Background(), to, msg)
+	if err != nil {
 		return false, fmt.Sprintf("failed to send contact: %v", err)
 	}
+	storeSent(client, to, msg, resp)
 	var names []string
 	for _, c := range contacts {
 		names = append(names, c.Name)
