@@ -236,20 +236,23 @@ func createGroup(client *whatsmeow.Client, messageStore *MessageStore, req group
 	if len([]rune(name)) > 100 {
 		return nil, fmt.Errorf("group name is limited to 100 characters")
 	}
-	if len(req.Participants) == 0 {
-		return nil, fmt.Errorf("at least one participant phone is required")
-	}
 	if req.PhotoPath != "" { // validate before creating, so a bad file doesn't leave a half-made group
 		if _, err := groupPhotoJPEG(req.PhotoPath); err != nil {
 			return nil, err
 		}
 	}
-	jids, notOn, err := phoneJIDs(client, req.Participants)
-	if err != nil {
-		return nil, err
-	}
-	if len(jids) == 0 {
-		return nil, fmt.Errorf("none of the numbers is on WhatsApp: %s", strings.Join(notOn, ", "))
+	// No participants = a group with only me (e.g. a private channel to talk to Claude from the phone).
+	var jids []types.JID
+	var notOn []string
+	if len(req.Participants) > 0 {
+		var err error
+		jids, notOn, err = phoneJIDs(client, req.Participants)
+		if err != nil {
+			return nil, err
+		}
+		if len(jids) == 0 {
+			return nil, fmt.Errorf("none of the numbers is on WhatsApp: %s", strings.Join(notOn, ", "))
+		}
 	}
 	info, err := client.CreateGroup(context.Background(), whatsmeow.ReqCreateGroup{Name: name, Participants: jids})
 	if err != nil {
