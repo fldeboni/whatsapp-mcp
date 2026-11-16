@@ -108,7 +108,15 @@ def react(group, msg_id, emoji):
 def to_whatsapp(md: str) -> str:
     """Markdown do Claude -> formatação do WhatsApp."""
     out = []
+    in_code = False
     for line in md.splitlines():
+        if line.strip().startswith("```"):
+            in_code = not in_code
+            out.append("```")  # WhatsApp shows the language tag ("bash") as text: drop it
+            continue
+        if in_code:
+            out.append(line)
+            continue
         m = re.match(r"^\s{0,3}#{1,6}\s+(.*)$", line)
         if m:
             line = f"*{m.group(1).strip().strip('*')}*"
