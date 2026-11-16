@@ -12,7 +12,10 @@ Arme um Monitor com:
 - description: "ponte WhatsApp"
 - timeout_ms: 1800000
 
-Quando ele expirar, arme de novo. Se o evento for `ja_rodando`, outro vigia já está ativo: não faça nada.
+Quando ele expirar ou terminar, arme de novo. Terminar com erro (exit 1) sem mensagem é normal: é o que acontece
+quando o vigia é reiniciado para carregar uma versão nova do `ponte.py`. Só rearme, sem alarde. Avise o usuário apenas
+se cair mais de 3 vezes em 10 minutos **e** houver mensagem de erro (Traceback) na saída.
+Se o evento for `ja_rodando`, outro vigia já está ativo: não faça nada.
 
 ## A cada evento `{"evento":"entregar", "lote", "sessao", "titulo", "arquivo"}`
 
