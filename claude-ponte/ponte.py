@@ -169,6 +169,40 @@ def new_messages(group, cursor, sent_ids):
     return out
 
 
+def transcribe(path):
+    t = subprocess.run([WHISPER_PY, os.path.join(HERE, "transcrever.py"), path],
+                       capture_output=True, text=True, encoding="utf-8", timeout=900)
+    if t.returncode == 0 and t.stdout.strip():
+        return t.stdout.strip(), None
+    return None, t.stderr.strip()[:200]
+
+
+def video_parts(path, max_frames=8):
+    """Claude can't watch a video: give it evenly spaced frames (images it can Read) and the transcribed audio."""
+    folder = os.path.splitext(path)[0] + "_quadros"
+    os.makedirs(folder, exist_ok=True)
+    try:
+        dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                                    path], capture_output=True, text=True, timeout=60).stdout.strip() or 0)
+    except (ValueError, subprocess.SubprocessError):
+        dur = 0
+    n = max(1, min(max_frames, int(dur // 3) + 1)) if dur else 4
+    frames = []
+    for i in range(n):
+        at = dur * (i + 0.5) / n if dur else i * 2
+        out = os.path.join(folder, f"quadro_{i + 1:02d}_{int(at)}s.jpg")
+        subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-ss", f"{at:.2f}", "-i", path,
+                        "-frames:v", "1", "-vf", "scale='min(1024,iw)':-2", out], capture_output=True, timeout=120)
+        if os.path.exists(out):
+            frames.append(out)
+    texto, erro = transcribe(path)
+    partes = [f"  duração: {dur:.0f} s" if dur else "  duração: desconhecida"]
+    if frames:
+        partes.append("  quadros ao longo do vídeo (abra com Read para ver): " + "; ".join(frames))
+    partes.append(f"  áudio transcrito: {texto}" if texto else f"  áudio: sem fala reconhecida ({erro})")
+    return "\n".join(partes)
+
+
 def describe(group, m):
     """Texto que o chat de destino vai ler para uma mensagem."""
     hora = m["ts"][11:16]
@@ -179,12 +213,15 @@ def describe(group, m):
     if m["tipo"] == "audio":
         if not path:
             return f"[{hora}] (áudio que não consegui baixar: {r.get('message')})"
-        t = subprocess.run([WHISPER_PY, os.path.join(HERE, "transcrever.py"), path],
-                           capture_output=True, text=True, encoding="utf-8", timeout=900)
-        if t.returncode == 0 and t.stdout.strip():
-            return f"[{hora}] (áudio transcrito) {t.stdout.strip()}"
-        return f"[{hora}] (áudio que não consegui transcrever: {t.stderr.strip()[:200]}; arquivo: {path})"
+        texto, erro = transcribe(path)
+        if texto:
+            return f"[{hora}] (áudio transcrito) {texto}"
+        return f"[{hora}] (áudio que não consegui transcrever: {erro}; arquivo: {path})"
     legenda = f" — legenda: {m['texto']}" if m["texto"] else ""
+    if path and m["tipo"] == "video":
+        return f"[{hora}] (vídeo enviado: {path}){legenda}\n{video_parts(path)}"
+    if path and m["tipo"] == "image":
+        return f"[{hora}] (foto enviada: {path} — abra com Read para ver){legenda}"
     if path:
         return f"[{hora}] ({m['tipo']} enviado: {path}){legenda}"
     return f"[{hora}] ({m['tipo']} que não consegui baixar: {r.get('message')}){legenda}"
