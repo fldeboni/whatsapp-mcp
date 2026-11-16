@@ -243,17 +243,21 @@ def vigiar():
     with open(LOCK, "w") as f:
         f.write(str(os.getpid()))
     emit("pronto", grupos=[lk["titulo"] for lk in links()])
-    reemitidos = set()
+    emitidos = {}  # lote -> when this watcher last handed it to the Ponte chat
     while True:
         state = load(STATE, {})
         for lk in links():
             g = lk["grupo"]
             st = state.setdefault(g, {"cursor": {"ts": now_iso().replace("T", " "), "id": ""}})
             lote = st.get("lote")
-            if lote and lote["status"] == "emitido" and lote["id"] not in reemitidos:
-                # a previous watcher emitted it but the Ponte chat never confirmed: hand it over again
-                reemitidos.add(lote["id"])
-                emit("entregar", lote=lote["id"], sessao=lk["sessao"], titulo=lk["titulo"], arquivo=lote["arquivo"])
+            if lote and lote["status"] == "emitido":
+                # never handed over by this watcher (it restarted), or the Ponte chat reported a failure and the
+                # retry time has come: hand it over again
+                ultimo = emitidos.get(lote["id"])
+                retry = lote.get("tentar_apos", 0)
+                if ultimo is None or (retry > ultimo and time.time() >= retry):
+                    emitidos[lote["id"]] = time.time()
+                    emit("entregar", lote=lote["id"], sessao=lk["sessao"], titulo=lk["titulo"], arquivo=lote["arquivo"])
             elif lote and lote["status"] == "entregue":
                 reply = find_reply(lk["sessao"], f"ponte:{lote['id']}")
                 if reply:
@@ -284,7 +288,7 @@ def vigiar():
                     st["lote"] = {"id": lote_id, "status": "emitido", "arquivo": arquivo,
                                   "mensagens": [m["id"] for m in msgs],
                                   "fim": {"ts": msgs[-1]["ts"], "id": msgs[-1]["id"]}}
-                    reemitidos.add(lote_id)
+                    emitidos[lote_id] = time.time()
                     save(STATE, state)
                     emit("entregar", lote=lote_id, sessao=lk["sessao"], titulo=lk["titulo"], arquivo=arquivo)
         save(STATE, state)
@@ -308,7 +312,8 @@ def main():
     elif cmd == "entregue":
         print("ok" if set_lote(sys.argv[2], status="entregue", entregue_em=time.time()) else "lote não encontrado")
     elif cmd == "falhou":
-        ok = set_lote(sys.argv[2], status="emitido")  # stays pending; the next watcher re-emits it
+        # stays pending; the watcher hands it over again in a minute (a sleeping chat wakes up on the first try)
+        ok = set_lote(sys.argv[2], status="emitido", tentar_apos=time.time() + 60)
         print(f"registrado: {' '.join(sys.argv[3:])}" if ok else "lote não encontrado")
     elif cmd == "ligar":
         grupo, sessao, titulo = sys.argv[2], sys.argv[3], " ".join(sys.argv[4:])
