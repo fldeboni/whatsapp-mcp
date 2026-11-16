@@ -49,10 +49,30 @@ Se você instalou por um zip antigo, o `update.ps1` explica como migrar para o r
 ## Marcar grupos como lidos automaticamente (opcional)
 
 Copie `auto-markread.example.json` para `%USERPROFILE%\.whatsapp-mcp\auto-markread.json` e coloque os grupos em `chats`
-
-Opcional: para o notebook não dormir quando a tela apaga (só na tomada), copie `keep-awake.example.json` para `%USERPROFILE%\.whatsapp-mcp\keep-awake.json`. A tela continua apagando; fechar a tampa ainda suspende.
 (ou peça ao Claude: *"configure o auto-markread com meus grupos de promoção"*). O bridge marca esses grupos como lidos
 a cada 30–60 min (aleatório), só entre 07:00 e 22:00, com pausas de humano entre um grupo e outro. Edições no arquivo valem no ciclo seguinte.
+
+Opcional: para o notebook não dormir quando a tela apaga (só na tomada), copie `keep-awake.example.json` para `%USERPROFILE%\.whatsapp-mcp\keep-awake.json`. A tela continua apagando; fechar a tampa ainda suspende.
+
+## Falar com um chat do Claude pelo WhatsApp (opcional)
+
+A ponte (`claude-ponte/`) liga um **grupo do WhatsApp só com você** a um chat do Claude desktop. O que você manda no
+grupo vira prompt naquele chat, e a resposta volta para o grupo começando por "*Retorno do Claude:*". Serve para
+acompanhar e tocar um trabalho pelo celular sem depender do acesso remoto.
+
+- **Texto, áudio, foto, vídeo e documento.** Áudio é transcrito no notebook (Whisper, sem mandar para fora). Vídeo vira
+  até 8 quadros mais a fala transcrita. Foto e documento vão como arquivo, e o chat abre.
+- Sua mensagem ganha ⏳ quando entra e ✅ quando a resposta volta. Se a ponte estiver desligada, nada se perde: as
+  mensagens vão juntas quando ela voltar.
+
+Para montar:
+1. Abra um chat novo no Claude desktop em modo **Ignorar permissões** e mande:
+   *"Você é o chat Ponte WhatsApp. Leia e siga à risca `<pasta do projeto>\claude-ponte\PONTE.md`."*
+2. Em qualquer conversa, peça: *"liga o chat X a um grupo do WhatsApp"*. O Claude cria o grupo só com você, com uma
+   foto do assunto, faz a ligação e coloca o chat X em **Ignorar permissões** (você aprova um cartão).
+
+**Por que Ignorar permissões:** a ponte e o chat ligado rodam sem ninguém olhando; se um deles parar para pedir
+aprovação, a resposta não volta. Por isso, ligue só chats em que você confia no que o Claude faz sozinho.
 
 ## Importante
 

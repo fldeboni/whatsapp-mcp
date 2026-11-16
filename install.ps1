@@ -5,6 +5,7 @@
 #   1. Instala pre-requisitos via winget (Go, uv, gcc/WinLibs, ffmpeg; Python 3.12 se nao houver >= 3.11)
 #   2. Compila o bridge em %USERPROFILE%\.whatsapp-mcp\bin
 #   3. Cria o ambiente Python em %USERPROFILE%\.whatsapp-mcp\venv
+#   3b. Cria o ambiente do Whisper da ponte WhatsApp -> Claude em %USERPROFILE%\.whatsapp-mcp\whisper-venv
 #   4. Registra o MCP "whatsapp" no Claude Code e/ou Claude Desktop
 #   5. Abre a janela do bridge para escanear o QR code
 #
@@ -17,7 +18,8 @@ param(
     [switch]$SkipPrereqs,
     [switch]$SkipRegister,
     [switch]$SkipPair,
-    [switch]$SkipShortcuts
+    [switch]$SkipShortcuts,
+    [switch]$SkipPonte
 )
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -117,6 +119,29 @@ $mainPy = Join-Path $root 'whatsapp-mcp-server\main.py'
 # Calls every read tool through the MCP layer against a throwaway DB (catches output-validation breakage).
 & $venvPy (Join-Path $root 'whatsapp-mcp-server\test_tools.py')
 if ($LASTEXITCODE -ne 0) { throw 'As ferramentas do MCP falharam no teste (ver acima).' }
+
+# 3b. Ponte WhatsApp -> Claude (claude-ponte/) ----------------------------------
+# Separate Python 3.12 env: faster-whisper/ctranslate2 wheels lag behind new Pythons, and the MCP venv must stay lean.
+# uv downloads Python 3.12 by itself if it isn't installed. The Whisper model (~500 MB) downloads on first use.
+if (-not $SkipPonte) {
+    Step 'Preparando a ponte WhatsApp -> Claude (transcricao de audio)'
+    $whisperVenv = Join-Path $DataDir 'whisper-venv'
+    $whisperPy = Join-Path $whisperVenv 'Scripts\python.exe'
+    try {
+        if (-not (Test-Path $whisperPy)) {
+            uv venv --python 3.12 $whisperVenv
+            if ($LASTEXITCODE -ne 0) { throw 'uv venv falhou' }
+        }
+        uv pip install --quiet --python $whisperPy faster-whisper numpy
+        if ($LASTEXITCODE -ne 0) { throw 'uv pip install falhou' }
+        & $whisperPy -c 'import faster_whisper, numpy'
+        if ($LASTEXITCODE -ne 0) { throw 'faster-whisper nao importa' }
+        Write-Host "    ok ($whisperVenv)"
+    } catch {
+        # The ponte is optional: the MCP works without it.
+        Write-Host "    Nao consegui preparar a transcricao ($_). O MCP funciona normalmente; a ponte vai mandar o audio sem transcrever." -ForegroundColor Yellow
+    }
+}
 
 # 4. Registro no Claude --------------------------------------------------------
 if (-not $SkipRegister) {

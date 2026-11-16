@@ -18,6 +18,7 @@ Configuração e estado ficam em %USERPROFILE%\\.whatsapp-mcp\\claude-ponte (for
 Comandos:
   ponte.py ligar <grupo_jid> <sessao_id> <titulo>   liga um grupo a um chat (a partir de agora)
   ponte.py desligar <grupo_jid>
+  ponte.py dono <nome>                              nome do dono do número (aparece no prompt)
   ponte.py listar
   ponte.py vigiar                                   laço principal; imprime um evento JSON por linha
   ponte.py entregue <lote>                          o chat Ponte confirma que repassou o prompt
@@ -74,6 +75,11 @@ def save(path, data):
 
 def links():
     return load(LINKS, {"links": []})["links"]
+
+
+def owner():
+    """Nome do dono do número, usado no texto que o chat de destino lê ("Mensagem do <nome>...")."""
+    return load(LINKS, {}).get("dono") or "dono do número"
 
 
 def emit(event, **kw):
@@ -322,7 +328,7 @@ def vigiar():
                         react(g, m["id"], "⏳")
                     lote_id = uuid.uuid4().hex[:8]
                     corpo = "\n".join(describe(g, m) for m in msgs)
-                    cab = (f"[via WhatsApp · ponte:{lote_id}] Mensagem do Felipe pelo grupo do WhatsApp ligado a este "
+                    cab = (f"[via WhatsApp · ponte:{lote_id}] Mensagem de {owner()} pelo grupo do WhatsApp ligado a este "
                            "chat. Responda normalmente: a sua resposta final deste turno vai de volta para o WhatsApp "
                            "dele, então seja direto e evite tabelas largas.")
                     if len(msgs) > 1:
@@ -370,6 +376,11 @@ def main():
         state[grupo] = {"cursor": {"ts": now_iso().replace("T", " "), "id": ""}}
         save(STATE, state)
         print(f"ligado: {titulo}")
+    elif cmd == "dono":
+        cfg = load(LINKS, {"links": []})
+        cfg["dono"] = " ".join(sys.argv[2:]).strip()
+        save(LINKS, cfg)
+        print(f"dono: {cfg['dono']}")
     elif cmd == "desligar":
         cfg = load(LINKS, {"links": []})
         cfg["links"] = [lk for lk in cfg["links"] if lk["grupo"] != sys.argv[2]]

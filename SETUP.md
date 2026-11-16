@@ -12,6 +12,8 @@ Conecta o WhatsApp **pessoal** ao Claude via whatsmeow (protocolo não oficial �
 | Binário do bridge | `%USERPROFILE%\.whatsapp-mcp\bin\whatsapp-bridge.exe` | |
 | venv Python | `%USERPROFILE%\.whatsapp-mcp\venv` | |
 | Logs (modo background) | `%USERPROFILE%\.whatsapp-mcp\logs` | |
+| Ponte: grupos ligados, estado, prompts | `%USERPROFILE%\.whatsapp-mcp\claude-ponte` | `links.json` (grupos ↔ sessões e `dono`), `state.json` (cursor e lote de cada grupo) |
+| venv do Whisper (ponte) | `%USERPROFILE%\.whatsapp-mcp\whisper-venv` | Python 3.12 separado: as rodas do faster-whisper/ctranslate2 demoram a sair para Pythons novos |
 
 `WHATSAPP_STORE_DIR` sobrescreve o local da store (bridge e servidor MCP leem a mesma variável).
 
@@ -72,6 +74,27 @@ Leitura liberada, envio sempre perguntando — qualquer contato pode mandar text
   Aparelhos conectados > Conectar aparelho > "Conectar com número de telefone". Sem o número, o QR fica em `pairing-qr.png`.
   Código vence em poucos minutos; reiniciar o bridge gera outro. Depois de pareado o arquivo do número é apagado.
 - A sessão aparece em "Aparelhos conectados" no celular; dá pra desconectar por lá a qualquer momento.
+
+## Ponte WhatsApp → chat do Claude (`claude-ponte/`)
+
+Peças:
+- `ponte.py vigiar`: lê `messages.db` (só leitura) a cada 3 s, só nos grupos ligados e só mensagens do próprio dono
+  (`is_from_me`). Monta um lote (texto; áudio transcrito; vídeo → quadros com ffmpeg + fala; foto/arquivo → caminho
+  baixado pelo bridge), grava em `prompts/<lote>.md` e emite `{"evento":"entregar",...}` no stdout.
+- Chat **Ponte** (Claude desktop, bypass): roda o vigia num Monitor e, a cada evento, repassa o arquivo ao chat de
+  destino com `send_message` (só um chat do Claude consegue escrever em outro). Confirma com `ponte.py entregue <lote>`
+  ou `falhou` (reenvio em 1 min). Instruções em `PONTE.md`.
+- O vigia acompanha o JSONL da sessão de destino (`%LOCALAPPDATA%\Claude-Data\...\claude-code-sessions`), pega a
+  resposta final do turno, converte Markdown → formatação do WhatsApp e envia ao grupo pela API do bridge com o
+  prefixo `*Retorno do Claude:*` (o prefixo também impede que a resposta volte como prompt).
+- `transcrever.py`: faster-whisper local (modelo `small`, CPU int8; `PONTE_WHISPER_MODEL` troca), decodificando com
+  ffmpeg (não usa PyAV, cujas versões novas quebram o faster-whisper). Reserva: API da OpenAI se houver `OPENAI_API_KEY`.
+
+Comandos: `ponte.py ligar <grupo_jid> <sessao_id> <titulo>` · `desligar <grupo_jid>` · `listar` · `dono <nome>`.
+Grupo só com o dono: `create_group` com `participants` vazio.
+
+Limites: chat de destino ou Ponte fora de bypass trava a entrega (o lote fica pendente). Botões, listas e carrossel
+não existem em conta pessoal (só na API oficial do WhatsApp Business); enquete existe.
 
 ## Rebuild manual
 
