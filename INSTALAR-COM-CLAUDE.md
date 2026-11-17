@@ -1,7 +1,8 @@
 # WhatsApp no Claude — instalação guiada pelo Claude
 
 > **Para você (pessoa):** abra o **Claude Code** (app desktop, aba *Code*, ou o terminal `claude`) no seu notebook Windows,
-> anexe ou cole este arquivo e escreva: **"siga estas instruções para instalar o WhatsApp MCP"**.
+> e escreva: **"siga as instruções de https://github.com/fldeboni/whatsapp-mcp/blob/main/INSTALAR-COM-CLAUDE.md para instalar o WhatsApp MCP"**
+> (ou anexe/cole este arquivo). Não precisa baixar nada antes: o Claude instala o Git e baixa o código.
 > O Claude instala tudo e só para quando precisar de você (login, QR code, confirmações).
 > Leva uns 15 minutos. Antes, confira a lista "O que você precisa ter".
 
