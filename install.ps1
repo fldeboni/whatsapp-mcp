@@ -20,7 +20,7 @@ param(
     [switch]$SkipPair,
     [switch]$SkipShortcuts,
     [switch]$SkipPonte,
-    # Name shown in the phone's "Linked devices" (default: "Claude - <computer name>" with a middle dot); applies at the next pairing
+    # Name shown in the phone's "Linked devices" as "Claude (<DeviceName>)", e.g. -DeviceName "Notebook pessoal" (default: the Windows computer name); applies at the next pairing
     [string]$DeviceName
 )
 $ErrorActionPreference = 'Stop'

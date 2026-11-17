@@ -60,10 +60,10 @@ Leia o `LEIA-ME.md` e o `SETUP.md` da pasta: são a referência do projeto.
 ### Etapa 4 — Rodar o instalador
 
 Antes, pergunte à pessoa **como este computador deve aparecer no celular** (WhatsApp → Aparelhos conectados), por
-exemplo "Claude · Notebook pessoal" ou "Claude · Notebook Gmill". Isso importa para quem instala em mais de uma máquina:
-sem nome, aparece "Claude · <nome do Windows>" (ex.: `NTBPE0E7CJN`), difícil de reconhecer. Na pasta do projeto:
+exemplo "Notebook pessoal" ou "Notebook Gmill" (aparece como "Claude (Notebook pessoal)"). Isso importa para quem instala em mais de uma máquina:
+sem nome, aparece "Claude (<nome do Windows>)" (ex.: `NTBPE0E7CJN`), difícil de reconhecer. Na pasta do projeto:
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -SkipPair -DeviceName "Claude · Notebook pessoal"
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -SkipPair -DeviceName "Notebook pessoal"
 ```
 Ele instala o que faltar (Go, uv, gcc, ffmpeg, Python 3.12), compila o bridge em `%USERPROFILE%\.whatsapp-mcp\bin`,
 cria o ambiente Python em `%USERPROFILE%\.whatsapp-mcp\venv` e registra o MCP `whatsapp` no Claude Code (escopo user) e no Claude Desktop (se existir).

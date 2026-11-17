@@ -67,18 +67,22 @@ func storeDir() string {
 
 // deviceName is how this computer shows up in the phone's "Linked devices" list, so someone running the bridge on
 // two machines can tell them apart (and remove the right one). Taken from device-name.txt next to the store
-// (install.ps1 -DeviceName writes it), else "Claude · <computer name>". Only sent at pairing time.
+// (install.ps1 -DeviceName writes it, e.g. "Notebook pessoal"), else the Windows computer name, shown as
+// "Claude (<name>)". Only sent at pairing time.
 func deviceName() string {
 	if b, err := os.ReadFile(filepath.Join(filepath.Dir(storeDir()), "device-name.txt")); err == nil {
 		if name := strings.TrimSpace(strings.TrimPrefix(string(b), string(rune(0xFEFF)))); name != "" {
-			if r := []rune(name); len(r) > 50 {
-				name = string(r[:50])
+			if r := []rune(name); len(r) > 40 {
+				name = string(r[:40])
 			}
-			return name
+			if strings.HasPrefix(strings.ToLower(name), "claude") {
+				return name // already a full name
+			}
+			return "Claude (" + name + ")"
 		}
 	}
 	if host, err := os.Hostname(); err == nil && host != "" {
-		return "Claude · " + host
+		return "Claude (" + host + ")"
 	}
 	return "Claude (WhatsApp MCP)"
 }
