@@ -65,6 +65,24 @@ func storeDir() string {
 	return "store"
 }
 
+// deviceName is how this computer shows up in the phone's "Linked devices" list, so someone running the bridge on
+// two machines can tell them apart (and remove the right one). Taken from device-name.txt next to the store
+// (install.ps1 -DeviceName writes it), else "Claude · <computer name>". Only sent at pairing time.
+func deviceName() string {
+	if b, err := os.ReadFile(filepath.Join(filepath.Dir(storeDir()), "device-name.txt")); err == nil {
+		if name := strings.TrimSpace(strings.TrimPrefix(string(b), string(rune(0xFEFF)))); name != "" {
+			if r := []rune(name); len(r) > 50 {
+				name = string(r[:50])
+			}
+			return name
+		}
+	}
+	if host, err := os.Hostname(); err == nil && host != "" {
+		return "Claude · " + host
+	}
+	return "Claude (WhatsApp MCP)"
+}
+
 // storeDSN builds a sqlite DSN for a file inside storeDir.
 func storeDSN(name string) string {
 	return "file:" + filepath.ToSlash(filepath.Join(storeDir(), name)) + "?_foreign_keys=on"
@@ -2121,7 +2139,7 @@ func main() {
 
 	// How this device shows up in the phone's "Linked devices" list. Only sent at pairing time
 	// (existing sessions keep their old name/icon until re-paired). Upstream sent UNKNOWN -> "?" icon, "Outro dispositivo".
-	wastore.SetOSInfo("Claude (WhatsApp MCP)", [3]uint32{1, 0, 0})
+	wastore.SetOSInfo(deviceName(), [3]uint32{1, 0, 0})
 	wastore.DeviceProps.PlatformType = waCompanionReg.DeviceProps_DESKTOP.Enum()
 
 	// Create client instance

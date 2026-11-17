@@ -22,6 +22,12 @@ O código é público (não precisa de conta no GitHub). Você só precisa do Gi
 3. Vai abrir uma janela com um **QR code**. No celular: WhatsApp → ⋮ → **Aparelhos conectados** → **Conectar um aparelho** → escaneie. (Expira em 3 min; se expirar, feche a janela e rode `.\start-bridge.ps1`.)
 4. Espere sincronizar (alguns minutos) e abra uma **conversa nova** no Claude (reinicie o Claude Desktop, se usar ele).
 
+**Mais de um computador** (ex.: notebook pessoal e do trabalho): instale em cada um e escaneie o QR em cada um; o
+WhatsApp aceita até 4 aparelhos conectados. Para reconhecer cada um no celular, dê um nome na instalação:
+`.\install.ps1 -DeviceName "Claude · Notebook pessoal"` (sem isso aparece "Claude · <nome do Windows>"). O nome vale
+no pareamento; para trocar depois, rode com `-DeviceName`, remova o aparelho no celular e escaneie de novo.
+Os dois funcionam ao mesmo tempo, cada um com a sua cópia das mensagens.
+
 Alternativa: se você usa o Claude Code, pode só abrir esta pasta nele e pedir *"instale este MCP seguindo o LEIA-ME.md"*.
 
 ## Usar

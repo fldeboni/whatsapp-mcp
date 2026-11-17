@@ -19,7 +19,9 @@ param(
     [switch]$SkipRegister,
     [switch]$SkipPair,
     [switch]$SkipShortcuts,
-    [switch]$SkipPonte
+    [switch]$SkipPonte,
+    # Name shown in the phone's "Linked devices" (default: "Claude - <computer name>" with a middle dot); applies at the next pairing
+    [string]$DeviceName
 )
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -119,6 +121,12 @@ $mainPy = Join-Path $root 'whatsapp-mcp-server\main.py'
 # Calls every read tool through the MCP layer against a throwaway DB (catches output-validation breakage).
 & $venvPy (Join-Path $root 'whatsapp-mcp-server\test_tools.py')
 if ($LASTEXITCODE -ne 0) { throw 'As ferramentas do MCP falharam no teste (ver acima).' }
+
+if ($DeviceName) {
+    New-Item -ItemType Directory -Force $DataDir | Out-Null
+    [IO.File]::WriteAllText((Join-Path $DataDir 'device-name.txt'), $DeviceName.Trim())
+    Write-Host "    Nome no celular (Aparelhos conectados): $($DeviceName.Trim())  - vale no proximo pareamento"
+}
 
 # 3b. Ponte WhatsApp -> Claude (claude-ponte/) ----------------------------------
 # Separate Python 3.12 env: faster-whisper/ctranslate2 wheels lag behind new Pythons, and the MCP venv must stay lean.
